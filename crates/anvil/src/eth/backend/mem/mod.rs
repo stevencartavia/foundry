@@ -1718,6 +1718,7 @@ impl Backend {
                             alloy_rpc_types::simulate::SimulateError {
                                 code: -3200,
                                 message: "execution failed".to_string(),
+                                data: None,
                             }
                         }),
                         logs: result.clone()
