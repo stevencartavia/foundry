@@ -13,6 +13,7 @@ use alloy_primitives::{
     map::{B256Map, HashMap},
 };
 use alloy_rlp::Decodable;
+use alloy_rpc_types::TransactionRequest;
 use alloy_sol_types::SolValue;
 use foundry_common::{
     fs::{read_json_file, write_json_file},

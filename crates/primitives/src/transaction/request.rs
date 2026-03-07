@@ -1,6 +1,7 @@
 use alloy_consensus::{BlobTransactionSidecarVariant, EthereumTypedTransaction};
 use alloy_network::{
-    BuildResult, NetworkWallet, TransactionBuilder, TransactionBuilder4844, TransactionBuilderError,
+    BuildResult, NetworkWallet, TransactionBuilder, TransactionBuilder4844,
+    TransactionBuilderError,
 };
 use alloy_primitives::{Address, B256, ChainId, TxKind, U256};
 use alloy_rpc_types::{AccessList, TransactionInputKind, TransactionRequest};
@@ -330,23 +331,18 @@ impl TransactionBuilder<FoundryNetwork> for FoundryTransactionRequest {
         self.as_ref().input.input()
     }
 
-    fn set_input<T: Into<alloy_primitives::Bytes>>(&mut self, input: T) {
-        self.as_mut().input.input = Some(input.into());
+    fn set_input(&mut self, input: alloy_primitives::Bytes) {
+        self.as_mut().input.input = Some(input);
     }
 
-    fn set_input_kind<T: Into<alloy_primitives::Bytes>>(
-        &mut self,
-        input: T,
-        kind: TransactionInputKind,
-    ) {
+    fn set_input_kind(&mut self, input: alloy_primitives::Bytes, kind: TransactionInputKind) {
         let inner = self.as_mut();
         match kind {
-            TransactionInputKind::Input => inner.input.input = Some(input.into()),
-            TransactionInputKind::Data => inner.input.data = Some(input.into()),
+            TransactionInputKind::Input => inner.input.input = Some(input),
+            TransactionInputKind::Data => inner.input.data = Some(input),
             TransactionInputKind::Both => {
-                let bytes = input.into();
-                inner.input.input = Some(bytes.clone());
-                inner.input.data = Some(bytes);
+                inner.input.input = Some(input.clone());
+                inner.input.data = Some(input);
             }
         }
     }
@@ -419,6 +415,17 @@ impl TransactionBuilder<FoundryNetwork> for FoundryTransactionRequest {
         self.as_mut().access_list = Some(access_list);
     }
 
+    fn can_submit(&self) -> bool {
+        self.from().is_some()
+    }
+
+    fn can_build(&self) -> bool {
+        self.as_ref().can_build()
+            || self.complete_deposit().is_ok()
+            || self.complete_tempo().is_ok()
+    }
+}
+
     fn complete_type(&self, ty: FoundryTxType) -> Result<(), Vec<&'static str>> {
         match ty {
             FoundryTxType::Legacy => self.as_ref().complete_legacy(),
@@ -429,16 +436,6 @@ impl TransactionBuilder<FoundryNetwork> for FoundryTransactionRequest {
             FoundryTxType::Deposit => self.complete_deposit(),
             FoundryTxType::Tempo => self.complete_tempo(),
         }
-    }
-
-    fn can_submit(&self) -> bool {
-        self.from().is_some()
-    }
-
-    fn can_build(&self) -> bool {
-        self.as_ref().can_build()
-            || self.complete_deposit().is_ok()
-            || self.complete_tempo().is_ok()
     }
 
     fn output_tx_type(&self) -> FoundryTxType {
@@ -534,6 +531,122 @@ impl TransactionBuilder4844 for FoundryTransactionRequest {
         self.as_mut().set_blob_sidecar(sidecar);
     }
 }
+
+use crate::{FoundryTransactionBuilder, FoundryTxRequest};
+
+impl FoundryTxRequest for FoundryTransactionRequest {
+    fn from(&self) -> Option<Address> {
+        self.as_ref().from
+    }
+
+    fn kind(&self) -> Option<TxKind> {
+        self.as_ref().to
+    }
+
+    fn nonce(&self) -> Option<u64> {
+        self.as_ref().nonce
+    }
+
+    fn value(&self) -> Option<U256> {
+        self.as_ref().value
+    }
+
+    fn input(&self) -> Option<&alloy_primitives::Bytes> {
+        self.as_ref().input.input()
+    }
+
+    fn gas_limit(&self) -> Option<u64> {
+        self.as_ref().gas
+    }
+
+    fn chain_id(&self) -> Option<u64> {
+        self.as_ref().chain_id
+    }
+
+    fn gas_price(&self) -> Option<u128> {
+        self.as_ref().gas_price
+    }
+
+    fn max_fee_per_gas(&self) -> Option<u128> {
+        self.as_ref().max_fee_per_gas
+    }
+
+    fn max_priority_fee_per_gas(&self) -> Option<u128> {
+        self.as_ref().max_priority_fee_per_gas
+    }
+
+    fn access_list(&self) -> Option<&AccessList> {
+        self.as_ref().access_list.as_ref()
+    }
+
+    fn transaction_type(&self) -> Option<u8> {
+        self.as_ref().transaction_type
+    }
+
+    fn max_fee_per_blob_gas(&self) -> Option<u128> {
+        self.as_ref().max_fee_per_blob_gas
+    }
+
+    fn set_max_fee_per_blob_gas(&mut self, max_fee_per_blob_gas: u128) {
+        self.as_mut().max_fee_per_blob_gas = Some(max_fee_per_blob_gas);
+    }
+
+    fn blob_versioned_hashes(&self) -> Option<&[B256]> {
+        self.as_ref().blob_versioned_hashes.as_deref()
+    }
+
+    fn set_blob_versioned_hashes(&mut self, hashes: Vec<B256>) {
+        self.as_mut().blob_versioned_hashes = Some(hashes);
+    }
+
+    fn blob_sidecar(&self) -> Option<&BlobTransactionSidecarVariant> {
+        self.as_ref().sidecar.as_ref()
+    }
+
+    fn set_blob_sidecar(&mut self, sidecar: BlobTransactionSidecarVariant) {
+        self.as_mut().sidecar = Some(sidecar);
+        self.as_mut().populate_blob_hashes();
+    }
+
+    fn authorization_list(&self) -> Option<&Vec<alloy_rpc_types::SignedAuthorization>> {
+        self.as_ref().authorization_list.as_ref()
+    }
+
+    fn set_authorization_list(
+        &mut self,
+        authorization_list: Vec<alloy_rpc_types::SignedAuthorization>,
+    ) {
+        self.as_mut().authorization_list = Some(authorization_list);
+    }
+
+    fn fee_token(&self) -> Option<Address> {
+        match self {
+            Self::Tempo(tx) => tx.fee_token,
+            _ => None,
+        }
+    }
+
+    fn set_fee_token(&mut self, fee_token: Address) {
+        if let Self::Tempo(tx) = self {
+            tx.fee_token = Some(fee_token);
+        }
+    }
+
+    fn nonce_key(&self) -> Option<U256> {
+        match self {
+            Self::Tempo(tx) => tx.nonce_key,
+            _ => None,
+        }
+    }
+
+    fn set_nonce_key(&mut self, nonce_key: U256) {
+        if let Self::Tempo(tx) = self {
+            tx.nonce_key = Some(nonce_key);
+        }
+    }
+}
+
+impl FoundryTransactionBuilder<FoundryNetwork> for FoundryTransactionRequest {}
 
 /// Converts `OtherFields` to `DepositTransactionParts`, produces error with missing fields
 pub fn get_deposit_tx_parts(

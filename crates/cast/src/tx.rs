@@ -541,7 +541,11 @@ where
         self.tx.set_kind(self.state.kind);
 
         // we set both fields to the same value because some nodes only accept the legacy `data` field: <https://github.com/foundry-rs/foundry/issues/7764#issuecomment-2210453249>
-        self.tx.set_input_kind(self.state.input.clone(), TransactionInputKind::Both);
+        TransactionBuilder::set_input_kind(
+            &mut self.tx,
+            self.state.input.clone(),
+            TransactionInputKind::Both,
+        );
 
         self.tx.set_from(from);
         self.tx.set_chain_id(self.chain.id());
