@@ -344,6 +344,7 @@ impl MultiWalletOpts {
     /// Returns all wallets read from the provided keystores arguments
     ///
     /// Returns `Ok(None)` if no keystore provided.
+    #[allow(clippy::type_complexity)]
     pub fn keystores(&self) -> Result<Option<(Vec<PendingSigner>, Vec<WalletSigner<Ethereum>>)>> {
         if let Some(keystore_paths) = self.keystore_paths()? {
             let mut pending = Vec::new();

@@ -210,10 +210,8 @@ impl RuntimeTransport {
             let (key, val) = header.split_once(':').ok_or_else(make_err)?;
 
             headers.insert(
-                alloy_reqwest::header::HeaderName::from_str(key.trim())
-                    .map_err(|_| make_err())?,
-                alloy_reqwest::header::HeaderValue::from_str(val.trim())
-                    .map_err(|_| make_err())?,
+                alloy_reqwest::header::HeaderName::from_str(key.trim()).map_err(|_| make_err())?,
+                alloy_reqwest::header::HeaderValue::from_str(val.trim()).map_err(|_| make_err())?,
             );
         }
 
@@ -227,7 +225,7 @@ impl RuntimeTransport {
 
         client_builder = client_builder.default_headers(headers);
 
-        Ok(client_builder.build().map_err(|e| RuntimeTransportError::BadScheme(e.to_string()))?)
+        client_builder.build().map_err(|e| RuntimeTransportError::BadScheme(e.to_string()))
     }
 
     /// Connects to an HTTP [alloy_transport_http::Http] transport.
