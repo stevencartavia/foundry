@@ -10,7 +10,7 @@ use alloy_consensus::{
 use alloy_evm::FromRecoveredTx;
 use alloy_network::{AnyRpcTransaction, AnyTxEnvelope, TransactionResponse};
 use alloy_primitives::{Address, B256, ChainId, TxHash};
-use alloy_rlp::{BufMut, Encodable};
+use alloy_rlp::BufMut;
 use alloy_rpc_types::ConversionError;
 use alloy_signer::Signature;
 use op_alloy_consensus::{DEPOSIT_TX_TYPE_ID, OpTransaction as OpTransactionTrait, TxDeposit};

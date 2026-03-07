@@ -12,7 +12,8 @@ use foundry_common::{
     fmt::{UIfmt, UIfmtReceiptExt},
     provider::ProviderBuilder,
 };
-use foundry_primitives::FoundryNetwork;
+use foundry_primitives::FoundryTransactionBuilder;
+use tempo_alloy::TempoNetwork;
 
 use crate::tx::{self, CastTxBuilder, CastTxSender, SendTxOpts};
 
@@ -92,7 +93,8 @@ impl SendTxArgs {
     pub async fn run_generic<N>(self) -> Result<()>
     where
         N: Network,
-        N::TxEnvelope: Clone,
+        N::TxEnvelope: Clone + From<alloy_consensus::Signed<N::UnsignedTx>>,
+        N::UnsignedTx: alloy_consensus::SignableTransaction<alloy_primitives::Signature>,
         N::TransactionRequest: FoundryTransactionBuilder<N>,
         N::ReceiptResponse: UIfmt + UIfmtReceiptExt,
     {
@@ -153,7 +155,7 @@ impl SendTxArgs {
         let is_tempo = builder.is_tempo();
 
         // Launch browser signer if `--browser` flag is set
-        let browser = send_tx.browser.run::<FoundryNetwork>().await?;
+        let browser = send_tx.browser.run::<N>().await?;
 
         // Tempo transactions with browser signer are not supported
         if is_tempo && browser.is_some() {

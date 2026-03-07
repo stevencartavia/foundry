@@ -293,14 +293,15 @@ impl CallArgs {
             None
         };
 
-        let (tx, func) = CastTxBuilder::new(&provider, tx, &config)
-            .await?
-            .with_to(to)
-            .await?
-            .with_code_sig_and_args(code, sig, args)
-            .await?
-            .build_raw(sender)
-            .await?;
+        let (tx, func): (N::TransactionRequest, _) =
+            CastTxBuilder::new(&provider, tx, &config)
+                .await?
+                .with_to(to)
+                .await?
+                .with_code_sig_and_args(code, sig, args)
+                .await?
+                .build_raw(sender)
+                .await?;
 
         if trace {
             if let Some(BlockId::Number(BlockNumberOrTag::Number(block_number))) = self.block {

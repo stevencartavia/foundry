@@ -1,10 +1,11 @@
 use std::{str::FromStr, time::Duration};
 
 use crate::{cmd::send::cast_send, format_uint_exp, tx::SendTxOpts};
+use alloy_consensus::{SignableTransaction, Signed};
 use alloy_eips::BlockId;
 use alloy_ens::NameOrAddress;
 use alloy_network::{AnyNetwork, Network};
-use alloy_primitives::{U64, U256};
+use alloy_primitives::{Signature, U64, U256};
 use alloy_provider::{Provider, fillers::RecommendedFillers};
 use alloy_sol_types::sol;
 use clap::{Args, Parser};
@@ -65,9 +66,14 @@ pub struct Erc20TxOpts {
 }
 
 /// Creates a provider with wallet for signing transactions locally.
-pub(crate) async fn get_provider_with_wallet<N: Network + RecommendedFillers>(
+pub(crate) async fn get_provider_with_wallet<N>(
     tx_opts: &SendTxOpts,
-) -> eyre::Result<RetryProviderWithSigner<N>> {
+) -> eyre::Result<RetryProviderWithSigner<N>>
+where
+    N: Network + RecommendedFillers,
+    N::TxEnvelope: From<Signed<N::UnsignedTx>>,
+    N::UnsignedTx: SignableTransaction<Signature>,
+{
     let config = tx_opts.eth.load_config()?;
     let signer = tx_opts.eth.wallet.signer::<N>().await?;
     let wallet = alloy_network::EthereumWallet::from(signer);
@@ -344,7 +350,8 @@ impl Erc20Subcommand {
     pub async fn run_generic<N>(self) -> eyre::Result<()>
     where
         N: Network + RecommendedFillers,
-        N::TxEnvelope: Clone,
+        N::TxEnvelope: Clone + From<Signed<N::UnsignedTx>>,
+        N::UnsignedTx: SignableTransaction<Signature>,
         N::TransactionRequest: FoundryTransactionBuilder<N>,
         N::ReceiptResponse: UIfmt + UIfmtReceiptExt,
     {

@@ -24,7 +24,7 @@ use crate::{
                 PoolTransaction, TransactionOrder, TransactionPriority, TxMarker, to_marker,
             },
         },
-        sign::{self, Signer},
+        sign::{self, AnvilSigner},
     },
     filter::{EthFilter, Filters, LogsFilter},
     mem::transaction_build,
@@ -113,7 +113,7 @@ pub struct EthApi {
     /// Whether this node is mining
     is_mining: bool,
     /// available signers
-    signers: Arc<Vec<Box<dyn Signer<FoundryNetwork>>>>,
+    signers: Arc<Vec<Box<dyn AnvilSigner<FoundryNetwork>>>>,
     /// data required for `eth_feeHistory`
     fee_history_cache: FeeHistoryCache,
     /// max number of items kept in fee cache
@@ -141,7 +141,7 @@ impl EthApi {
     pub fn new(
         pool: Arc<Pool>,
         backend: Arc<backend::mem::Backend>,
-        signers: Arc<Vec<Box<dyn Signer<FoundryNetwork>>>>,
+        signers: Arc<Vec<Box<dyn AnvilSigner<FoundryNetwork>>>>,
         fee_history_cache: FeeHistoryCache,
         fee_history_limit: u64,
         miner: Miner,
@@ -3180,7 +3180,7 @@ impl EthApi {
 
     /// Returns the first signer that can sign for the given address
     #[expect(clippy::borrowed_box)]
-    pub fn get_signer(&self, address: Address) -> Option<&Box<dyn Signer<FoundryNetwork>>> {
+    pub fn get_signer(&self, address: Address) -> Option<&Box<dyn AnvilSigner<FoundryNetwork>>> {
         self.signers.iter().find(|signer| signer.is_signer_for(address))
     }
 

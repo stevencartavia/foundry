@@ -4923,7 +4923,6 @@ dependencies = [
  "path-slash",
  "rayon",
  "regex",
- "reqwest 0.13.2",
  "revm",
  "semver 1.0.27",
  "serde",

@@ -3,7 +3,7 @@ use alloy_consensus::{SidecarBuilder, SignableTransaction, SimpleCoder};
 use alloy_dyn_abi::ErrorExt;
 use alloy_ens::NameOrAddress;
 use alloy_json_abi::Function;
-use alloy_network::{Network, TransactionBuilder, TransactionBuilder4844, TransactionBuilder7702};
+use alloy_network::{Network, TransactionBuilder};
 use alloy_primitives::{Address, Bytes, TxHash, TxKind, U256, hex};
 use alloy_provider::{PendingTransactionBuilder, Provider};
 use alloy_rpc_types::{AccessList, Authorization, TransactionInputKind};
@@ -497,7 +497,7 @@ where
     /// is ready to be broadcasted.
     pub async fn build(
         self,
-        sender: impl Into<SenderKind<'_>>,
+        sender: impl Into<SenderKind<'_, N>>,
     ) -> Result<(N::TransactionRequest, Option<Function>)> {
         self._build(sender, true, false).await
     }
@@ -506,7 +506,7 @@ where
     /// such as eth_call, eth_estimateGas, etc
     pub async fn build_raw(
         self,
-        sender: impl Into<SenderKind<'_>>,
+        sender: impl Into<SenderKind<'_, N>>,
     ) -> Result<(N::TransactionRequest, Option<Function>)> {
         self._build(sender, false, false).await
     }

@@ -12,7 +12,6 @@ use alloy_transport::{
 use alloy_transport_http::{Http, reqwest as alloy_reqwest};
 use alloy_transport_ipc::IpcConnect;
 use alloy_transport_ws::WsConnect;
-use reqwest::header::{HeaderName, HeaderValue};
 use std::{fmt, path::PathBuf, str::FromStr, sync::Arc};
 use thiserror::Error;
 use tokio::sync::RwLock;
@@ -375,7 +374,7 @@ fn url_to_file_path(url: &Url) -> Result<PathBuf, ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reqwest::header::HeaderMap;
+    use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
     #[tokio::test]
     async fn test_user_agent_header() {

@@ -9,7 +9,7 @@ use alloy_signer_local::{MnemonicBuilder, PrivateKeySigner, coins_bip39::English
 use alloy_signer_trezor::{HDPath as TrezorHDPath, TrezorSigner};
 use alloy_sol_types::{Eip712Domain, SolStruct};
 use async_trait::async_trait;
-use std::{collections::HashSet, path::PathBuf};
+use std::{collections::HashSet, marker::PhantomData, path::PathBuf};
 use tracing::warn;
 
 #[cfg(feature = "aws-kms")]
@@ -48,6 +48,10 @@ pub enum WalletSigner<N: Network = Ethereum> {
     /// Wrapper around Turnkey signer.
     #[cfg(feature = "turnkey")]
     Turnkey(TurnkeySigner),
+
+    /// Phantom data to hold the network type parameter.
+    #[doc(hidden)]
+    _Phantom(PhantomData<N>, std::convert::Infallible),
 }
 
 impl<N: Network> WalletSigner<N> {
@@ -218,6 +222,7 @@ impl<N: Network> WalletSigner<N> {
             Self::Turnkey(turnkey) => {
                 senders.insert(alloy_signer::Signer::address(turnkey));
             }
+            Self::_Phantom(_, infallible) => match *infallible {},
         }
         Ok(senders.into_iter().collect())
     }
@@ -256,6 +261,7 @@ macro_rules! delegate {
             Self::Gcp($inner) => $e,
             #[cfg(feature = "turnkey")]
             Self::Turnkey($inner) => $e,
+            Self::_Phantom(_, infallible) => match *infallible {},
         }
     };
 }
