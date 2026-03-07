@@ -2,16 +2,15 @@ use std::{path::PathBuf, str::FromStr, time::Duration};
 
 use alloy_eips::Encodable2718;
 use alloy_ens::NameOrAddress;
-use alloy_network::{AnyNetwork, EthereumWallet, TransactionBuilder};
-use alloy_provider::{Provider, ProviderBuilder};
-use alloy_rpc_types::TransactionRequest;
-use alloy_serde::WithOtherFields;
+use alloy_network::{AnyNetwork, EthereumWallet, Network, TransactionBuilder};
+use alloy_provider::{Provider, ProviderBuilder as AlloyProviderBuilder};
 use alloy_signer::Signer;
 use clap::Parser;
 use eyre::{Result, eyre};
-use foundry_cli::{
-    opts::TransactionOpts,
-    utils::{LoadConfig, get_provider},
+use foundry_cli::{opts::TransactionOpts, utils::LoadConfig};
+use foundry_common::{
+    fmt::{UIfmt, UIfmtReceiptExt},
+    provider::ProviderBuilder,
 };
 use foundry_primitives::FoundryNetwork;
 
@@ -82,7 +81,21 @@ pub enum SendTxSubcommands {
 }
 
 impl SendTxArgs {
-    pub async fn run(self) -> eyre::Result<()> {
+    pub async fn run(self) -> Result<()> {
+        if self.tx.tempo.fee_token.is_some() || self.tx.tempo.sequence_key.is_some() {
+            self.run_generic::<TempoNetwork>().await
+        } else {
+            self.run_generic::<AnyNetwork>().await
+        }
+    }
+
+    pub async fn run_generic<N>(self) -> Result<()>
+    where
+        N: Network,
+        N::TxEnvelope: Clone,
+        N::TransactionRequest: FoundryTransactionBuilder<N>,
+        N::ReceiptResponse: UIfmt + UIfmtReceiptExt,
+    {
         let Self { to, mut sig, mut args, data, send_tx, tx, command, unlocked, path } = self;
 
         let blob_data = if let Some(path) = path { Some(std::fs::read(path)?) } else { None };
@@ -120,7 +133,7 @@ impl SendTxArgs {
         };
 
         let config = send_tx.eth.load_config()?;
-        let provider = get_provider(&config)?;
+        let provider = ProviderBuilder::<N>::from_config(&config)?.build()?;
 
         if let Some(interval) = send_tx.poll_interval {
             provider.client().set_poll_interval(Duration::from_secs(interval))
@@ -175,7 +188,7 @@ impl SendTxArgs {
 
             cast_send(
                 provider,
-                tx.into_inner().into(),
+                tx,
                 send_tx.cast_async,
                 send_tx.sync,
                 send_tx.confirmations,
@@ -254,13 +267,13 @@ impl SendTxArgs {
             let (tx_request, _) = builder.build(&signer).await?;
 
             let wallet = EthereumWallet::from(signer);
-            let provider = ProviderBuilder::<_, _, AnyNetwork>::default()
+            let provider = AlloyProviderBuilder::<_, _, N>::default()
                 .wallet(wallet)
                 .connect_provider(&provider);
 
             cast_send(
                 provider,
-                tx_request.into_inner().into(),
+                tx_request,
                 send_tx.cast_async,
                 send_tx.sync,
                 send_tx.confirmations,
@@ -271,15 +284,22 @@ impl SendTxArgs {
     }
 }
 
-pub(crate) async fn cast_send<P: Provider<AnyNetwork>>(
+pub(crate) async fn cast_send<N, P>(
     provider: P,
-    tx: WithOtherFields<TransactionRequest>,
+    tx: N::TransactionRequest,
     cast_async: bool,
     sync: bool,
     confs: u64,
     timeout: u64,
-) -> Result<()> {
-    let cast = CastTxSender::new(&provider);
+) -> Result<()>
+where
+    N: Network,
+    N::TxEnvelope: Clone,
+    N::TransactionRequest: FoundryTransactionBuilder<N>,
+    N::ReceiptResponse: UIfmt + UIfmtReceiptExt,
+    P: Provider<N>,
+{
+    let cast = CastTxSender::new(provider);
 
     if sync {
         // Send transaction and wait for receipt synchronously

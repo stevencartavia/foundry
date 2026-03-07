@@ -68,7 +68,7 @@ impl<N: Network> MultiWallet<N> {
         Ok((self.signers, self.browser))
     }
 
-    pub fn add_signer(&mut self, signer: WalletSigner) {
+    pub fn add_signer(&mut self, signer: WalletSigner<Ethereum>) {
         self.signers.insert(signer.address(), signer);
     }
 }
@@ -303,7 +303,7 @@ impl MultiWalletOpts {
         Ok(MultiWallet::new(pending, signers, browser))
     }
 
-    pub fn private_keys(&self) -> Result<Option<Vec<WalletSigner>>> {
+    pub fn private_keys(&self) -> Result<Option<Vec<WalletSigner<Ethereum>>>> {
         let mut pks = vec![];
         if let Some(private_key) = &self.private_key {
             pks.push(private_key);
@@ -344,7 +344,7 @@ impl MultiWalletOpts {
     /// Returns all wallets read from the provided keystores arguments
     ///
     /// Returns `Ok(None)` if no keystore provided.
-    pub fn keystores(&self) -> Result<Option<(Vec<PendingSigner>, Vec<WalletSigner>)>> {
+    pub fn keystores(&self) -> Result<Option<(Vec<PendingSigner>, Vec<WalletSigner<Ethereum>>)>> {
         if let Some(keystore_paths) = self.keystore_paths()? {
             let mut pending = Vec::new();
             let mut signers = Vec::new();
@@ -374,7 +374,7 @@ impl MultiWalletOpts {
         Ok(None)
     }
 
-    pub fn mnemonics(&self) -> Result<Option<Vec<WalletSigner>>> {
+    pub fn mnemonics(&self) -> Result<Option<Vec<WalletSigner<Ethereum>>>> {
         if let Some(ref mnemonics) = self.mnemonics {
             let mut wallets = vec![];
 
@@ -403,7 +403,7 @@ impl MultiWalletOpts {
         Ok(None)
     }
 
-    pub async fn ledgers(&self) -> Result<Option<Vec<WalletSigner>>> {
+    pub async fn ledgers(&self) -> Result<Option<Vec<WalletSigner<Ethereum>>>> {
         if self.ledger {
             let mut args = self.clone();
 
@@ -420,7 +420,7 @@ impl MultiWalletOpts {
         Ok(None)
     }
 
-    pub async fn trezors(&self) -> Result<Option<Vec<WalletSigner>>> {
+    pub async fn trezors(&self) -> Result<Option<Vec<WalletSigner<Ethereum>>>> {
         if self.trezor {
             let mut args = self.clone();
 
@@ -434,7 +434,7 @@ impl MultiWalletOpts {
         Ok(None)
     }
 
-    pub async fn aws_signers(&self) -> Result<Option<Vec<WalletSigner>>> {
+    pub async fn aws_signers(&self) -> Result<Option<Vec<WalletSigner<Ethereum>>>> {
         #[cfg(feature = "aws-kms")]
         if self.aws {
             let mut wallets = vec![];
@@ -465,7 +465,7 @@ impl MultiWalletOpts {
     /// - GCP_KEY_VERSION: The GCP key version. e.g. `1`.
     ///
     /// For more information on GCP KMS, see the [official documentation](https://cloud.google.com/kms/docs).
-    pub async fn gcp_signers(&self) -> Result<Option<Vec<WalletSigner>>> {
+    pub async fn gcp_signers(&self) -> Result<Option<Vec<WalletSigner<Ethereum>>>> {
         #[cfg(feature = "gcp-kms")]
         if self.gcp {
             let mut wallets = vec![];
@@ -492,7 +492,7 @@ impl MultiWalletOpts {
         Ok(None)
     }
 
-    pub fn turnkey_signers(&self) -> Result<Option<Vec<WalletSigner>>> {
+    pub fn turnkey_signers(&self) -> Result<Option<Vec<WalletSigner<Ethereum>>>> {
         #[cfg(feature = "turnkey")]
         if self.turnkey {
             let api_private_key = std::env::var("TURNKEY_API_PRIVATE_KEY")?;
