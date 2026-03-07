@@ -548,6 +548,7 @@ impl MinedTransaction {
             index: Some(self.info.transaction_index),
             block_hash: Some(self.block_hash),
             block_number: Some(self.block_number),
+            block_timestamp: None,
             base_fee: None,
         })
     }

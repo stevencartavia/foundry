@@ -1722,6 +1722,7 @@ impl Backend {
                             alloy_rpc_types::simulate::SimulateError {
                                 code: -3200,
                                 message: "execution failed".to_string(),
+                                data: Default::default(),
                             }
                         }),
                         logs: result.clone()
@@ -3850,6 +3851,7 @@ pub fn transaction_build(
                         .as_ref()
                         .map(|block| B256::from(keccak256(alloy_rlp::encode(&block.header)))),
                     block_number: block.as_ref().map(|block| block.header.number),
+                    block_timestamp: block.as_ref().map(|block| block.header.timestamp),
                     transaction_index: info.as_ref().map(|info| info.transaction_index),
                     effective_gas_price: None,
                 };
@@ -3910,6 +3912,7 @@ pub fn transaction_build(
         inner: Recovered::new_unchecked(envelope, from),
         block_hash: block.as_ref().map(|block| block.header.hash_slow()),
         block_number: block.as_ref().map(|block| block.header.number),
+        block_timestamp: block.as_ref().map(|block| block.header.timestamp),
         transaction_index: info.as_ref().map(|info| info.transaction_index),
         // deprecated
         effective_gas_price: Some(effective_gas_price),

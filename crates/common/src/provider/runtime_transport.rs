@@ -9,7 +9,7 @@ use alloy_rpc_types::engine::{Claims, JwtSecret};
 use alloy_transport::{
     Authorization, BoxTransport, TransportError, TransportErrorKind, TransportFut,
 };
-use alloy_transport_http::Http;
+use alloy_transport_http::{Http, reqwest as alloy_reqwest};
 use alloy_transport_ipc::IpcConnect;
 use alloy_transport_ws::WsConnect;
 use reqwest::header::{HeaderName, HeaderValue};
@@ -24,7 +24,7 @@ use url::Url;
 #[derive(Clone, Debug)]
 pub enum InnerTransport {
     /// HTTP transport
-    Http(Http<reqwest::Client>),
+    Http(Http<alloy_reqwest::Client>),
     /// WebSocket transport
     Ws(PubSubFrontend),
     /// IPC transport
@@ -51,8 +51,8 @@ pub enum RuntimeTransportError {
     BadPath(String),
 
     /// Invalid construction of Http provider
-    #[error(transparent)]
-    HttpConstructionError(#[from] reqwest::Error),
+    #[error("Http construction error: {0}")]
+    HttpConstructionError(String),
 
     /// Invalid JWT
     #[error("Invalid JWT: {0}")]
@@ -174,10 +174,12 @@ impl RuntimeTransport {
     }
 
     /// Creates a new reqwest client from this transport.
-    pub fn reqwest_client(&self) -> Result<reqwest::Client, RuntimeTransportError> {
-        let mut client_builder = reqwest::Client::builder()
+    ///
+    /// Uses alloy's re-exported reqwest (0.13) to ensure type compatibility with
+    /// `Http<alloy_reqwest::Client>`.
+    pub fn reqwest_client(&self) -> Result<alloy_reqwest::Client, RuntimeTransportError> {
+        let mut client_builder = alloy_reqwest::Client::builder()
             .timeout(self.timeout)
-            .tls_built_in_root_certs(self.url.scheme() == "https")
             .danger_accept_invalid_certs(self.accept_invalid_certs);
 
         // Disable automatic proxy detection if requested. This helps in sandboxed environments
@@ -187,18 +189,19 @@ impl RuntimeTransport {
             client_builder = client_builder.no_proxy();
         }
 
-        let mut headers = reqwest::header::HeaderMap::new();
+        let mut headers = alloy_reqwest::header::HeaderMap::new();
 
         // If there's a JWT, add it to the headers if we can decode it.
         if let Some(jwt) = self.jwt.clone() {
             let auth =
                 build_auth(jwt).map_err(|e| RuntimeTransportError::InvalidJwt(e.to_string()))?;
 
-            let mut auth_value: HeaderValue =
-                HeaderValue::from_str(&auth.to_string()).expect("Header should be valid string");
+            let mut auth_value: alloy_reqwest::header::HeaderValue =
+                alloy_reqwest::header::HeaderValue::from_str(&auth.to_string())
+                    .expect("Header should be valid string");
             auth_value.set_sensitive(true);
 
-            headers.insert(reqwest::header::AUTHORIZATION, auth_value);
+            headers.insert(alloy_reqwest::header::AUTHORIZATION, auth_value);
         };
 
         // Add any custom headers.
@@ -208,22 +211,24 @@ impl RuntimeTransport {
             let (key, val) = header.split_once(':').ok_or_else(make_err)?;
 
             headers.insert(
-                HeaderName::from_str(key.trim()).map_err(|_| make_err())?,
-                HeaderValue::from_str(val.trim()).map_err(|_| make_err())?,
+                alloy_reqwest::header::HeaderName::from_str(key.trim())
+                    .map_err(|_| make_err())?,
+                alloy_reqwest::header::HeaderValue::from_str(val.trim())
+                    .map_err(|_| make_err())?,
             );
         }
 
-        if !headers.contains_key(reqwest::header::USER_AGENT) {
+        if !headers.contains_key(alloy_reqwest::header::USER_AGENT) {
             headers.insert(
-                reqwest::header::USER_AGENT,
-                HeaderValue::from_str(DEFAULT_USER_AGENT)
+                alloy_reqwest::header::USER_AGENT,
+                alloy_reqwest::header::HeaderValue::from_str(DEFAULT_USER_AGENT)
                     .expect("User-Agent should be valid string"),
             );
         }
 
         client_builder = client_builder.default_headers(headers);
 
-        Ok(client_builder.build()?)
+        Ok(client_builder.build().map_err(|e| RuntimeTransportError::BadScheme(e.to_string()))?)
     }
 
     /// Connects to an HTTP [alloy_transport_http::Http] transport.

@@ -129,10 +129,6 @@ impl Precompile for CheatEcrecover {
     fn precompile_id(&self) -> &PrecompileId {
         &PRECOMPILE_ID_CHEAT_ECRECOVER
     }
-
-    fn is_pure(&self) -> bool {
-        false
-    }
 }
 
 /// A custom ecrecover precompile that supports cheat-based signature overrides.

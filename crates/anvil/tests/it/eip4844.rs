@@ -28,7 +28,7 @@ async fn can_send_eip4844_transaction() {
 
     let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(b"Hello World");
 
-    let sidecar = sidecar.build().unwrap();
+    let sidecar: BlobTransactionSidecar = sidecar.build_4844().unwrap();
     let tx = TransactionRequest::default()
         .with_from(from)
         .with_to(to)
@@ -36,7 +36,7 @@ async fn can_send_eip4844_transaction() {
         .with_max_fee_per_blob_gas(gas_price + 1)
         .with_max_fee_per_gas(eip1559_est.max_fee_per_gas)
         .with_max_priority_fee_per_gas(eip1559_est.max_priority_fee_per_gas)
-        .with_blob_sidecar(sidecar)
+        .with_blob_sidecar_4844(sidecar)
         .value(U256::from(5));
 
     let tx = WithOtherFields::new(tx);
@@ -60,12 +60,12 @@ async fn can_send_eip4844_transaction_fork() {
     let bob = accounts[1];
 
     let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(b"Blobs are fun!");
-    let sidecar: BlobTransactionSidecar = sidecar.build().unwrap();
+    let sidecar: BlobTransactionSidecar = sidecar.build_4844().unwrap();
 
     let tx = TransactionRequest::default()
         .with_from(alice)
         .with_to(bob)
-        .with_blob_sidecar(sidecar.clone());
+        .with_blob_sidecar_4844(sidecar.clone());
 
     let pending_tx = provider.send_transaction(tx.into()).await.unwrap();
     let receipt = pending_tx.get_receipt().await.unwrap();
@@ -87,12 +87,12 @@ async fn can_send_eip4844_transaction_eth_send_transaction() {
     let bob = accounts[1];
 
     let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(b"Blobs are fun!");
-    let sidecar: BlobTransactionSidecar = sidecar.build().unwrap();
+    let sidecar: BlobTransactionSidecar = sidecar.build_4844().unwrap();
 
     let tx = TransactionRequest::default()
         .with_from(alice)
         .with_to(bob)
-        .with_blob_sidecar(sidecar.clone());
+        .with_blob_sidecar_4844(sidecar.clone());
 
     let pending_tx = provider.send_transaction(tx).await.unwrap();
     let receipt = pending_tx.get_receipt().await.unwrap();
@@ -115,7 +115,7 @@ async fn can_send_eip4844_transaction_with_eip7594_sidecar_format() {
     let sidecar = sidecar.build_7594().unwrap();
 
     let mut tx = TransactionRequest::default().with_from(alice).with_to(bob);
-    alloy_network::TransactionBuilder7594::set_blob_sidecar_7594(&mut tx, sidecar);
+    TransactionBuilder4844::set_blob_sidecar_7594(&mut tx, sidecar);
 
     let pending_tx = provider.send_transaction(tx).await.unwrap();
     let receipt = pending_tx.get_receipt().await.unwrap();
@@ -142,7 +142,7 @@ async fn can_send_multiple_blobs_in_one_tx() {
     let large_data = vec![1u8; DATA_GAS_PER_BLOB as usize * 5]; // 131072 is DATA_GAS_PER_BLOB and also BYTE_PER_BLOB
     let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(&large_data);
 
-    let sidecar = sidecar.build().unwrap();
+    let sidecar: BlobTransactionSidecar = sidecar.build_4844().unwrap();
 
     let tx = TransactionRequest::default()
         .with_from(from)
@@ -151,7 +151,7 @@ async fn can_send_multiple_blobs_in_one_tx() {
         .with_max_fee_per_blob_gas(gas_price + 1)
         .with_max_fee_per_gas(eip1559_est.max_fee_per_gas)
         .with_max_priority_fee_per_gas(eip1559_est.max_priority_fee_per_gas)
-        .with_blob_sidecar(sidecar);
+        .with_blob_sidecar_4844(sidecar);
     let tx = WithOtherFields::new(tx);
 
     let receipt = provider.send_transaction(tx).await.unwrap().get_receipt().await.unwrap();
@@ -178,7 +178,7 @@ async fn cannot_exceed_six_blobs() {
     let large_data = vec![1u8; DATA_GAS_PER_BLOB as usize * 6]; // 131072 is DATA_GAS_PER_BLOB and also BYTE_PER_BLOB
     let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(&large_data);
 
-    let sidecar = sidecar.build().unwrap();
+    let sidecar: BlobTransactionSidecar = sidecar.build_4844().unwrap();
 
     let tx = TransactionRequest::default()
         .with_from(from)
@@ -187,7 +187,7 @@ async fn cannot_exceed_six_blobs() {
         .with_max_fee_per_blob_gas(gas_price + 1)
         .with_max_fee_per_gas(eip1559_est.max_fee_per_gas)
         .with_max_priority_fee_per_gas(eip1559_est.max_priority_fee_per_gas)
-        .with_blob_sidecar(sidecar);
+        .with_blob_sidecar_4844(sidecar);
     let tx = WithOtherFields::new(tx);
 
     let err = provider.send_transaction(tx).await.unwrap_err();
@@ -216,7 +216,7 @@ async fn can_mine_blobs_when_exceeds_max_blobs() {
 
     let num_blobs_first = sidecar.clone().take().len() as u64;
 
-    let sidecar = sidecar.build().unwrap();
+    let sidecar: BlobTransactionSidecar = sidecar.build_4844().unwrap();
 
     let tx = TransactionRequest::default()
         .with_from(from)
@@ -225,7 +225,7 @@ async fn can_mine_blobs_when_exceeds_max_blobs() {
         .with_max_fee_per_blob_gas(gas_price + 1)
         .with_max_fee_per_gas(eip1559_est.max_fee_per_gas)
         .with_max_priority_fee_per_gas(eip1559_est.max_priority_fee_per_gas)
-        .with_blob_sidecar(sidecar);
+        .with_blob_sidecar_4844(sidecar);
     let mut tx = WithOtherFields::new(tx);
 
     let first_tx = provider.send_transaction(tx.clone()).await.unwrap();
@@ -236,8 +236,8 @@ async fn can_mine_blobs_when_exceeds_max_blobs() {
 
     let num_blobs_second = sidecar.clone().take().len() as u64;
 
-    let sidecar = sidecar.build().unwrap();
-    tx.set_blob_sidecar(sidecar);
+    let sidecar: BlobTransactionSidecar = sidecar.build_4844().unwrap();
+    tx.set_blob_sidecar_4844(sidecar);
     tx.set_nonce(1);
     let second_tx = provider.send_transaction(tx).await.unwrap();
 
@@ -291,9 +291,9 @@ async fn can_correctly_estimate_blob_gas_with_recommended_fillers() {
     let bob = accounts[1];
 
     let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(b"Blobs are fun!");
-    let sidecar = sidecar.build().unwrap();
+    let sidecar: BlobTransactionSidecar = sidecar.build_4844().unwrap();
 
-    let tx = TransactionRequest::default().with_to(bob).with_blob_sidecar(sidecar);
+    let tx = TransactionRequest::default().with_to(bob).with_blob_sidecar_4844(sidecar);
     let tx = WithOtherFields::new(tx);
 
     // Send the transaction and wait for the broadcast.
@@ -337,9 +337,9 @@ async fn can_correctly_estimate_blob_gas_with_recommended_fillers_with_signer() 
     let bob = accounts[1];
 
     let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(b"Blobs are fun!");
-    let sidecar = sidecar.build().unwrap();
+    let sidecar: BlobTransactionSidecar = sidecar.build_4844().unwrap();
 
-    let tx = TransactionRequest::default().with_to(bob).with_blob_sidecar(sidecar);
+    let tx = TransactionRequest::default().with_to(bob).with_blob_sidecar_4844(sidecar);
     let tx = WithOtherFields::new(tx);
 
     // Send the transaction and wait for the broadcast.
@@ -431,7 +431,7 @@ async fn can_get_blobs_by_versioned_hash() {
 
     let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(b"Hello World");
 
-    let sidecar: BlobTransactionSidecar = sidecar.build().unwrap();
+    let sidecar: BlobTransactionSidecar = sidecar.build_4844().unwrap();
     let tx = TransactionRequest::default()
         .with_from(from)
         .with_to(to)
@@ -439,7 +439,7 @@ async fn can_get_blobs_by_versioned_hash() {
         .with_max_fee_per_blob_gas(gas_price + 1)
         .with_max_fee_per_gas(eip1559_est.max_fee_per_gas)
         .with_max_priority_fee_per_gas(eip1559_est.max_priority_fee_per_gas)
-        .with_blob_sidecar(sidecar.clone())
+        .with_blob_sidecar_4844(sidecar.clone())
         .value(U256::from(5));
 
     let tx = WithOtherFields::new(tx);
@@ -467,7 +467,7 @@ async fn can_get_blobs_by_tx_hash() {
 
     let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(b"Hello World");
 
-    let sidecar: BlobTransactionSidecar = sidecar.build().unwrap();
+    let sidecar: BlobTransactionSidecar = sidecar.build_4844().unwrap();
     let tx = TransactionRequest::default()
         .with_from(from)
         .with_to(to)
@@ -475,7 +475,7 @@ async fn can_get_blobs_by_tx_hash() {
         .with_max_fee_per_blob_gas(gas_price + 1)
         .with_max_fee_per_gas(eip1559_est.max_fee_per_gas)
         .with_max_priority_fee_per_gas(eip1559_est.max_priority_fee_per_gas)
-        .with_blob_sidecar(sidecar.clone())
+        .with_blob_sidecar_4844(sidecar.clone())
         .value(U256::from(5));
 
     let tx = WithOtherFields::new(tx);

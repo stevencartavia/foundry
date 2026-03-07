@@ -33,7 +33,7 @@ pub type OpenChainSignatures = Vec<String>;
 /// A client that can request API data from OpenChain.
 #[derive(Clone, Debug)]
 pub struct OpenChainClient {
-    inner: reqwest::Client,
+    inner: alloy_transport_http::reqwest::Client,
     /// Whether the connection is spurious, or API is down
     spurious_connection: Arc<AtomicBool>,
     /// How many requests timed out
@@ -58,7 +58,10 @@ impl OpenChainClient {
         })
     }
 
-    async fn get_text(&self, url: impl reqwest::IntoUrl + fmt::Display) -> reqwest::Result<String> {
+    async fn get_text(
+        &self,
+        url: impl alloy_transport_http::reqwest::IntoUrl + fmt::Display,
+    ) -> alloy_transport_http::reqwest::Result<String> {
         trace!(%url, "GET");
         self.inner
             .get(url)
@@ -75,7 +78,7 @@ impl OpenChainClient {
         &self,
         url: &str,
         body: &T,
-    ) -> reqwest::Result<R> {
+    ) -> alloy_transport_http::reqwest::Result<R> {
         trace!(%url, body=?serde_json::to_string(body), "POST");
         self.inner
             .post(url)
@@ -88,8 +91,8 @@ impl OpenChainClient {
             .inspect_err(|err| self.on_reqwest_err(err))
     }
 
-    fn on_reqwest_err(&self, err: &reqwest::Error) {
-        fn is_connectivity_err(err: &reqwest::Error) -> bool {
+    fn on_reqwest_err(&self, err: &alloy_transport_http::reqwest::Error) {
+        fn is_connectivity_err(err: &alloy_transport_http::reqwest::Error) -> bool {
             if err.is_timeout() || err.is_connect() {
                 return true;
             }
