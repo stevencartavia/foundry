@@ -307,7 +307,6 @@ impl ResolvedEtherscanConfig {
             }
         }
 
-
         let mut client_builder = foundry_block_explorers::Client::builder()
             .with_api_key(api_key)
             .with_cache(cache, Duration::from_secs(24 * 60 * 60));

@@ -2,7 +2,7 @@ use alloy_consensus::{
     BlobTransactionSidecar, BlobTransactionSidecarEip7594, BlobTransactionSidecarVariant,
 };
 use alloy_network::{AnyNetwork, Ethereum, Network, TransactionBuilder};
-use alloy_primitives::{Address, Bytes, B256, TxKind, U256};
+use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
 use alloy_rpc_types::{AccessList, SignedAuthorization, TransactionRequest};
 use alloy_serde::WithOtherFields;
 use std::fmt::Debug;

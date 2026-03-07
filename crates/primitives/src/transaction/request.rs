@@ -1,7 +1,6 @@
 use alloy_consensus::{BlobTransactionSidecarVariant, EthereumTypedTransaction};
 use alloy_network::{
-    BuildResult, NetworkWallet, TransactionBuilder, TransactionBuilder4844,
-    TransactionBuilderError,
+    BuildResult, NetworkWallet, TransactionBuilder, TransactionBuilder4844, TransactionBuilderError,
 };
 use alloy_primitives::{Address, B256, ChainId, TxKind, U256};
 use alloy_rpc_types::{AccessList, TransactionInputKind, TransactionRequest};
@@ -335,7 +334,11 @@ impl TransactionBuilder<FoundryNetwork> for FoundryTransactionRequest {
         self.as_mut().input.input = Some(input.into());
     }
 
-    fn set_input_kind<T: Into<alloy_primitives::Bytes>>(&mut self, input: T, kind: TransactionInputKind) {
+    fn set_input_kind<T: Into<alloy_primitives::Bytes>>(
+        &mut self,
+        input: T,
+        kind: TransactionInputKind,
+    ) {
         let input = input.into();
         let inner = self.as_mut();
         match kind {

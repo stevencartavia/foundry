@@ -12,8 +12,7 @@ use alloy_provider::{
     Provider,
     ext::TraceApi,
     network::{
-        AnyTxEnvelope, TransactionBuilder, TransactionResponse,
-        primitives::BlockTransactions,
+        AnyTxEnvelope, TransactionBuilder, TransactionResponse, primitives::BlockTransactions,
     },
 };
 use alloy_rpc_types::{
