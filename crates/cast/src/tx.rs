@@ -19,7 +19,7 @@ use foundry_common::{
     TransactionReceiptWithRevertReason, fmt::*, get_pretty_receipt_w_reason_attr, shell,
 };
 use foundry_config::{Chain, Config};
-use foundry_primitives::FoundryTransactionBuilder;
+use foundry_primitives::{FoundryTransactionBuilder, FoundryTxRequest};
 use foundry_wallets::{BrowserWalletOpts, WalletOpts, WalletSigner};
 use itertools::Itertools;
 use serde_json::value::RawValue;

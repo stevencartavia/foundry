@@ -5,8 +5,7 @@ use alloy_eips::{
     eip4844::{BLOB_TX_MIN_BLOB_GASPRICE, DATA_GAS_PER_BLOB, MAX_DATA_GAS_PER_BLOCK_DENCUN},
 };
 use alloy_network::{
-    DynTransactionBuilder, EthereumWallet, ReceiptResponse, TransactionBuilder,
-    TransactionBuilder4844,
+    EthereumWallet, ReceiptResponse, TransactionBuilder, TransactionBuilder4844,
 };
 use alloy_primitives::{Address, U256, b256};
 use alloy_provider::{Provider, ProviderBuilder};

@@ -41,7 +41,7 @@ use foundry_evm::{
     opts::EvmOpts,
     traces::{InternalTraceMode, TraceMode},
 };
-use foundry_primitives::FoundryTransactionBuilder;
+use foundry_primitives::{FoundryTransactionBuilder, FoundryTxRequest};
 use foundry_wallets::WalletOpts;
 use itertools::Either;
 use regex::Regex;
