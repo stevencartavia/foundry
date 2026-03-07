@@ -175,6 +175,13 @@ This preserves the alloy 2.0 RC revisions and fork patches.
 | `crates/script/src/broadcast.rs` | Forge script broadcasting |
 | `crates/script/src/simulate.rs` | Forge script simulation |
 
+### Step 7: Clean Up Warnings
+
+Removed two remaining warnings to achieve a fully clean build:
+
+- **`crates/cheatcodes/src/evm.rs`**: Removed unused `use alloy_rpc_types::TransactionRequest` import
+- **`crates/cast/Cargo.toml`**: Removed unused `alloy-serde` dependency (only referenced in doc comments, not actual code)
+
 ## Build Status
 
-✅ `cargo check --tests` passes with no errors (only unused import warnings).
+✅ `cargo check --tests` passes with zero errors and zero warnings.

@@ -2,7 +2,7 @@ use alloy_consensus::{
     BlobTransactionSidecar, BlobTransactionSidecarEip7594, BlobTransactionSidecarVariant,
 };
 use alloy_network::{AnyNetwork, Ethereum, Network, TransactionBuilder};
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, Bytes, B256, TxKind, U256};
 use alloy_rpc_types::{AccessList, SignedAuthorization, TransactionRequest};
 use alloy_serde::WithOtherFields;
 use std::fmt::Debug;
@@ -22,62 +22,62 @@ pub trait FoundryTxRequest: Debug {
     // ── Base transaction fields ──────────────────────────────────────────
 
     /// Get the sender address.
-    fn from(&self) -> Option<Address> {
+    fn ftx_from(&self) -> Option<Address> {
         None
     }
 
     /// Get the transaction kind (to address or create).
-    fn kind(&self) -> Option<alloy_primitives::TxKind> {
+    fn ftx_kind(&self) -> Option<TxKind> {
         None
     }
 
     /// Get the nonce.
-    fn nonce(&self) -> Option<u64> {
+    fn ftx_nonce(&self) -> Option<u64> {
         None
     }
 
     /// Get the value.
-    fn value(&self) -> Option<U256> {
+    fn ftx_value(&self) -> Option<U256> {
         None
     }
 
     /// Get the input data.
-    fn input(&self) -> Option<&Bytes> {
+    fn ftx_input(&self) -> Option<&Bytes> {
         None
     }
 
     /// Get the gas limit.
-    fn gas_limit(&self) -> Option<u64> {
+    fn ftx_gas_limit(&self) -> Option<u64> {
         None
     }
 
     /// Get the chain ID.
-    fn chain_id(&self) -> Option<u64> {
+    fn ftx_chain_id(&self) -> Option<u64> {
         None
     }
 
     /// Get the gas price (legacy/EIP-2930).
-    fn gas_price(&self) -> Option<u128> {
+    fn ftx_gas_price(&self) -> Option<u128> {
         None
     }
 
     /// Get the max fee per gas (EIP-1559).
-    fn max_fee_per_gas(&self) -> Option<u128> {
+    fn ftx_max_fee_per_gas(&self) -> Option<u128> {
         None
     }
 
     /// Get the max priority fee per gas (EIP-1559).
-    fn max_priority_fee_per_gas(&self) -> Option<u128> {
+    fn ftx_max_priority_fee_per_gas(&self) -> Option<u128> {
         None
     }
 
     /// Get the access list.
-    fn access_list(&self) -> Option<&AccessList> {
+    fn ftx_access_list(&self) -> Option<&AccessList> {
         None
     }
 
     /// Get the transaction type.
-    fn transaction_type(&self) -> Option<u8> {
+    fn ftx_transaction_type(&self) -> Option<u8> {
         None
     }
 
@@ -92,9 +92,6 @@ pub trait FoundryTxRequest: Debug {
     fn set_max_fee_per_blob_gas(&mut self, _max_fee_per_blob_gas: u128) {}
 
     /// Gets the EIP-4844 blob versioned hashes of the transaction.
-    ///
-    /// These may be set independently of the sidecar, e.g. when the sidecar
-    /// has been pruned but the hashes are still needed for `eth_call`.
     fn blob_versioned_hashes(&self) -> Option<&[B256]> {
         None
     }
@@ -108,9 +105,6 @@ pub trait FoundryTxRequest: Debug {
     }
 
     /// Sets the blob sidecar (either EIP-4844 or EIP-7594 variant) of the transaction.
-    ///
-    /// Note: This will also set the versioned blob hashes accordingly:
-    /// [BlobTransactionSidecarVariant::versioned_hashes]
     fn set_blob_sidecar(&mut self, _sidecar: BlobTransactionSidecarVariant) {}
 
     /// Gets the EIP-4844 blob sidecar if the current sidecar is of that variant.
@@ -164,12 +158,10 @@ pub trait FoundryTxRequest: Debug {
 
 /// Sized transaction builder trait for Foundry transactions.
 ///
-/// This extends both [`FoundryTxRequest`] (for field access) and [`TransactionBuilder<N>`]
-/// (for network-specific building), adding builder-pattern methods for Foundry-specific
-/// fields.
-pub trait FoundryTransactionBuilder<N: Network>:
-    FoundryTxRequest + TransactionBuilder<N>
-{
+/// This extends [`TransactionBuilder<N>`] (for network-specific building), adding
+/// builder-pattern methods for Foundry-specific fields like blob sidecars, authorization
+/// lists, and Tempo transaction fields.
+pub trait FoundryTransactionBuilder<N: Network>: FoundryTxRequest + TransactionBuilder<N> {
     /// Builder-pattern method for setting max fee per blob gas.
     fn with_max_fee_per_blob_gas(mut self, max_fee_per_blob_gas: u128) -> Self {
         self.set_max_fee_per_blob_gas(max_fee_per_blob_gas);
@@ -219,64 +211,52 @@ pub trait FoundryTransactionBuilder<N: Network>:
     }
 }
 
-// ── Implementations for TransactionRequest ──────────────────────────────────
+// ── Implementations ──────────────────────────────────────────
 
-/// Helper macro to implement base FoundryTxRequest methods for types that deref to
-/// TransactionRequest.
-macro_rules! impl_foundry_tx_request_base {
-    ($ty:ty) => {
-        fn from(&self) -> Option<Address> {
-            TransactionBuilder::<Ethereum>::from(self)
+/// Helper macro to implement FoundryTxRequest base fields for types backed by TransactionRequest.
+macro_rules! impl_foundry_tx_request_for_tx_req {
+    () => {
+        fn ftx_from(&self) -> Option<Address> {
+            self.from
         }
-
-        fn kind(&self) -> Option<alloy_primitives::TxKind> {
-            TransactionBuilder::<Ethereum>::kind(self)
+        fn ftx_kind(&self) -> Option<TxKind> {
+            self.to
         }
-
-        fn nonce(&self) -> Option<u64> {
-            TransactionBuilder::<Ethereum>::nonce(self)
+        fn ftx_nonce(&self) -> Option<u64> {
+            self.nonce
         }
-
-        fn value(&self) -> Option<U256> {
-            TransactionBuilder::<Ethereum>::value(self)
+        fn ftx_value(&self) -> Option<U256> {
+            self.value
         }
-
-        fn input(&self) -> Option<&Bytes> {
-            TransactionBuilder::<Ethereum>::input(self)
+        fn ftx_input(&self) -> Option<&Bytes> {
+            self.input.input()
         }
-
-        fn gas_limit(&self) -> Option<u64> {
-            TransactionBuilder::<Ethereum>::gas_limit(self)
+        fn ftx_gas_limit(&self) -> Option<u64> {
+            self.gas
         }
-
-        fn chain_id(&self) -> Option<u64> {
-            TransactionBuilder::<Ethereum>::chain_id(self)
+        fn ftx_chain_id(&self) -> Option<u64> {
+            self.chain_id
         }
-
-        fn gas_price(&self) -> Option<u128> {
-            TransactionBuilder::<Ethereum>::gas_price(self)
+        fn ftx_gas_price(&self) -> Option<u128> {
+            self.gas_price
         }
-
-        fn max_fee_per_gas(&self) -> Option<u128> {
-            TransactionBuilder::<Ethereum>::max_fee_per_gas(self)
+        fn ftx_max_fee_per_gas(&self) -> Option<u128> {
+            self.max_fee_per_gas
         }
-
-        fn max_priority_fee_per_gas(&self) -> Option<u128> {
-            TransactionBuilder::<Ethereum>::max_priority_fee_per_gas(self)
+        fn ftx_max_priority_fee_per_gas(&self) -> Option<u128> {
+            self.max_priority_fee_per_gas
         }
-
-        fn access_list(&self) -> Option<&AccessList> {
-            TransactionBuilder::<Ethereum>::access_list(self)
+        fn ftx_access_list(&self) -> Option<&AccessList> {
+            self.access_list.as_ref()
         }
-
-        fn transaction_type(&self) -> Option<u8> {
+        fn ftx_transaction_type(&self) -> Option<u8> {
             self.transaction_type
         }
     };
 }
 
 impl FoundryTxRequest for TransactionRequest {
-    impl_foundry_tx_request_base!(TransactionRequest);
+    impl_foundry_tx_request_for_tx_req!();
 
     fn max_fee_per_blob_gas(&self) -> Option<u128> {
         self.max_fee_per_blob_gas
@@ -315,7 +295,7 @@ impl FoundryTxRequest for TransactionRequest {
 impl FoundryTransactionBuilder<Ethereum> for <Ethereum as Network>::TransactionRequest {}
 
 impl FoundryTxRequest for WithOtherFields<TransactionRequest> {
-    impl_foundry_tx_request_base!(WithOtherFields<TransactionRequest>);
+    impl_foundry_tx_request_for_tx_req!();
 
     fn max_fee_per_blob_gas(&self) -> Option<u128> {
         self.max_fee_per_blob_gas
@@ -354,51 +334,40 @@ impl FoundryTxRequest for WithOtherFields<TransactionRequest> {
 impl FoundryTransactionBuilder<AnyNetwork> for <AnyNetwork as Network>::TransactionRequest {}
 
 impl FoundryTxRequest for TempoTransactionRequest {
-    fn from(&self) -> Option<Address> {
+    fn ftx_from(&self) -> Option<Address> {
         self.inner.from
     }
-
-    fn kind(&self) -> Option<alloy_primitives::TxKind> {
+    fn ftx_kind(&self) -> Option<TxKind> {
         self.inner.to
     }
-
-    fn nonce(&self) -> Option<u64> {
+    fn ftx_nonce(&self) -> Option<u64> {
         self.inner.nonce
     }
-
-    fn value(&self) -> Option<U256> {
+    fn ftx_value(&self) -> Option<U256> {
         self.inner.value
     }
-
-    fn input(&self) -> Option<&Bytes> {
+    fn ftx_input(&self) -> Option<&Bytes> {
         self.inner.input.input()
     }
-
-    fn gas_limit(&self) -> Option<u64> {
+    fn ftx_gas_limit(&self) -> Option<u64> {
         self.inner.gas
     }
-
-    fn chain_id(&self) -> Option<u64> {
+    fn ftx_chain_id(&self) -> Option<u64> {
         self.inner.chain_id
     }
-
-    fn gas_price(&self) -> Option<u128> {
+    fn ftx_gas_price(&self) -> Option<u128> {
         self.inner.gas_price
     }
-
-    fn max_fee_per_gas(&self) -> Option<u128> {
+    fn ftx_max_fee_per_gas(&self) -> Option<u128> {
         self.inner.max_fee_per_gas
     }
-
-    fn max_priority_fee_per_gas(&self) -> Option<u128> {
+    fn ftx_max_priority_fee_per_gas(&self) -> Option<u128> {
         self.inner.max_priority_fee_per_gas
     }
-
-    fn access_list(&self) -> Option<&AccessList> {
+    fn ftx_access_list(&self) -> Option<&AccessList> {
         self.inner.access_list.as_ref()
     }
-
-    fn transaction_type(&self) -> Option<u8> {
+    fn ftx_transaction_type(&self) -> Option<u8> {
         self.inner.transaction_type
     }
 

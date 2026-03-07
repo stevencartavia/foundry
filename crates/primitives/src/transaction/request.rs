@@ -154,7 +154,7 @@ impl FoundryTransactionRequest {
                 tx_req.build_aa().map_err(|e| Self::Tempo(Box::new(e.into_value())))?,
             ))
         } else if self.as_ref().has_eip4844_fields()
-            && self.blob_sidecar().is_none()
+            && FoundryTxRequest::blob_sidecar(&self).is_none()
         {
             // if request has eip4844 fields but no blob sidecar (neither eip4844 nor eip7594
             // format), try to build to eip4844 without sidecar
@@ -331,11 +331,12 @@ impl TransactionBuilder<FoundryNetwork> for FoundryTransactionRequest {
         self.as_ref().input.input()
     }
 
-    fn set_input(&mut self, input: alloy_primitives::Bytes) {
-        self.as_mut().input.input = Some(input);
+    fn set_input<T: Into<alloy_primitives::Bytes>>(&mut self, input: T) {
+        self.as_mut().input.input = Some(input.into());
     }
 
-    fn set_input_kind(&mut self, input: alloy_primitives::Bytes, kind: TransactionInputKind) {
+    fn set_input_kind<T: Into<alloy_primitives::Bytes>>(&mut self, input: T, kind: TransactionInputKind) {
+        let input = input.into();
         let inner = self.as_mut();
         match kind {
             TransactionInputKind::Input => inner.input.input = Some(input),
@@ -424,7 +425,6 @@ impl TransactionBuilder<FoundryNetwork> for FoundryTransactionRequest {
             || self.complete_deposit().is_ok()
             || self.complete_tempo().is_ok()
     }
-}
 
     fn complete_type(&self, ty: FoundryTxType) -> Result<(), Vec<&'static str>> {
         match ty {
@@ -491,10 +491,9 @@ impl TransactionBuilder<FoundryNetwork> for FoundryTransactionRequest {
         }
         if preferred_type == FoundryTxType::Eip4844 {
             inner
-                .as_ref()
-                .max_fee_per_blob_gas()
+                .max_fee_per_blob_gas
                 .is_none()
-                .then(|| inner.as_mut().set_max_fee_per_blob_gas(Default::default()));
+                .then(|| inner.max_fee_per_blob_gas = Some(Default::default()));
         }
     }
 
@@ -516,70 +515,71 @@ impl TransactionBuilder<FoundryNetwork> for FoundryTransactionRequest {
 
 impl TransactionBuilder4844 for FoundryTransactionRequest {
     fn max_fee_per_blob_gas(&self) -> Option<u128> {
-        self.as_ref().max_fee_per_blob_gas()
+        self.as_ref().max_fee_per_blob_gas
     }
 
     fn set_max_fee_per_blob_gas(&mut self, max_fee_per_blob_gas: u128) {
-        self.as_mut().set_max_fee_per_blob_gas(max_fee_per_blob_gas);
+        self.as_mut().max_fee_per_blob_gas = Some(max_fee_per_blob_gas);
     }
 
     fn blob_sidecar(&self) -> Option<&BlobTransactionSidecarVariant> {
-        self.as_ref().blob_sidecar()
+        self.as_ref().sidecar.as_ref()
     }
 
     fn set_blob_sidecar(&mut self, sidecar: BlobTransactionSidecarVariant) {
-        self.as_mut().set_blob_sidecar(sidecar);
+        self.as_mut().sidecar = Some(sidecar);
+        self.as_mut().populate_blob_hashes();
     }
 }
 
 use crate::{FoundryTransactionBuilder, FoundryTxRequest};
 
 impl FoundryTxRequest for FoundryTransactionRequest {
-    fn from(&self) -> Option<Address> {
+    fn ftx_from(&self) -> Option<Address> {
         self.as_ref().from
     }
 
-    fn kind(&self) -> Option<TxKind> {
+    fn ftx_kind(&self) -> Option<TxKind> {
         self.as_ref().to
     }
 
-    fn nonce(&self) -> Option<u64> {
+    fn ftx_nonce(&self) -> Option<u64> {
         self.as_ref().nonce
     }
 
-    fn value(&self) -> Option<U256> {
+    fn ftx_value(&self) -> Option<U256> {
         self.as_ref().value
     }
 
-    fn input(&self) -> Option<&alloy_primitives::Bytes> {
+    fn ftx_input(&self) -> Option<&alloy_primitives::Bytes> {
         self.as_ref().input.input()
     }
 
-    fn gas_limit(&self) -> Option<u64> {
+    fn ftx_gas_limit(&self) -> Option<u64> {
         self.as_ref().gas
     }
 
-    fn chain_id(&self) -> Option<u64> {
+    fn ftx_chain_id(&self) -> Option<u64> {
         self.as_ref().chain_id
     }
 
-    fn gas_price(&self) -> Option<u128> {
+    fn ftx_gas_price(&self) -> Option<u128> {
         self.as_ref().gas_price
     }
 
-    fn max_fee_per_gas(&self) -> Option<u128> {
+    fn ftx_max_fee_per_gas(&self) -> Option<u128> {
         self.as_ref().max_fee_per_gas
     }
 
-    fn max_priority_fee_per_gas(&self) -> Option<u128> {
+    fn ftx_max_priority_fee_per_gas(&self) -> Option<u128> {
         self.as_ref().max_priority_fee_per_gas
     }
 
-    fn access_list(&self) -> Option<&AccessList> {
+    fn ftx_access_list(&self) -> Option<&AccessList> {
         self.as_ref().access_list.as_ref()
     }
 
-    fn transaction_type(&self) -> Option<u8> {
+    fn ftx_transaction_type(&self) -> Option<u8> {
         self.as_ref().transaction_type
     }
 

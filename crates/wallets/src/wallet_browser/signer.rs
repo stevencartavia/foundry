@@ -5,7 +5,7 @@ use std::{
 
 use alloy_consensus::SignableTransaction;
 use alloy_dyn_abi::TypedData;
-use alloy_network::{DynTransactionBuilder, Ethereum, Network, TxSigner};
+use alloy_network::{Ethereum, Network, TransactionBuilder, TxSigner};
 use alloy_primitives::{Address, B256, ChainId, hex};
 use alloy_signer::{Result, Signature, Signer, SignerSync};
 use alloy_sol_types::{Eip712Domain, SolStruct};
@@ -25,7 +25,10 @@ pub struct BrowserSigner<N: Network = Ethereum> {
     chain_id: ChainId,
 }
 
-impl<N: Network> BrowserSigner<N> {
+impl<N: Network> BrowserSigner<N>
+where
+    N::TransactionRequest: TransactionBuilder<N>,
+{
     pub async fn new(
         port: u16,
         open_browser: bool,

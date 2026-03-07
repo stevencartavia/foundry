@@ -7,7 +7,7 @@ use alloy_provider::fillers::{
     BlobGasFiller, ChainIdFiller, GasFiller, JoinFill, NonceFiller, RecommendedFillers,
 };
 pub use receipt::*;
-pub use transaction::{FoundryTxRequest, FoundryTxRequestBuilder};
+pub use transaction::{FoundryTransactionBuilder, FoundryTxRequest};
 
 /// Foundry network type.
 ///

@@ -2,7 +2,7 @@
 
 use alloy_consensus::{Transaction, TxEnvelope, transaction::SignerRecoverable};
 use alloy_eips::eip7702::SignedAuthorization;
-use alloy_network::{AnyTransactionReceipt, DynTransactionBuilder, Network, TransactionResponse};
+use alloy_network::{AnyTransactionReceipt, Network, TransactionBuilder, TransactionResponse};
 use alloy_primitives::{Address, Bytes, TxKind, U256};
 use alloy_provider::{
     Provider,
@@ -29,6 +29,7 @@ pub struct TransactionReceiptWithRevertReason<N: Network> {
 impl<N: Network> TransactionReceiptWithRevertReason<N>
 where
     N::TxEnvelope: Clone,
+    N::TransactionRequest: TransactionBuilder<N>,
     N::ReceiptResponse: UIfmtReceiptExt,
 {
     /// Updates the revert reason field using `eth_call` and returns an Err variant if the revert
@@ -116,7 +117,7 @@ value                {}",
                     .unwrap_or_default()
                     .pretty(),
                 tx.chain_id.pretty(),
-                tx.gas_limit().unwrap_or_default(),
+                tx.gas.unwrap_or_default(),
                 tx.gas_price.pretty(),
                 tx.input.input.pretty(),
                 tx.max_fee_per_blob_gas.pretty(),
@@ -225,7 +226,7 @@ impl TransactionMaybeSigned {
     pub fn gas(&self) -> Option<u128> {
         match self {
             Self::Signed { tx, .. } => Some(tx.gas_limit() as u128),
-            Self::Unsigned(tx) => tx.gas_limit().map(|g| g as u128),
+            Self::Unsigned(tx) => tx.gas.map(|g| g as u128),
         }
     }
 

@@ -170,22 +170,22 @@ pub fn configure_tx_env(env: &mut EnvMut<'_>, tx: &dyn TransactionResponse) -> e
 /// Configures the env for the given a generic transaction request.
 pub fn configure_tx_req_env(env: &mut EnvMut<'_>, tx: &dyn FoundryTxRequest) -> eyre::Result<()> {
     // If no `to` field then set create kind: https://eips.ethereum.org/EIPS/eip-2470#deployment-transaction
-    env.tx.kind = tx.kind().unwrap_or(TxKind::Create);
+    env.tx.kind = tx.ftx_kind().unwrap_or(TxKind::Create);
     // If the transaction is impersonated, we need to set the caller to the from
     // address Ref: https://github.com/foundry-rs/foundry/issues/9541
-    env.tx.caller = tx.from().ok_or_else(|| eyre::eyre!("missing `from` field"))?;
-    env.tx.gas_limit = tx.gas_limit().ok_or_else(|| eyre::eyre!("missing `gas` field"))?;
-    env.tx.nonce = tx.nonce().unwrap_or_default();
-    env.tx.value = tx.value().unwrap_or_default();
-    env.tx.data = tx.input().cloned().unwrap_or_default();
-    env.tx.chain_id = tx.chain_id();
+    env.tx.caller = tx.ftx_from().ok_or_else(|| eyre::eyre!("missing `from` field"))?;
+    env.tx.gas_limit = tx.ftx_gas_limit().ok_or_else(|| eyre::eyre!("missing `gas` field"))?;
+    env.tx.nonce = tx.ftx_nonce().unwrap_or_default();
+    env.tx.value = tx.ftx_value().unwrap_or_default();
+    env.tx.data = tx.ftx_input().cloned().unwrap_or_default();
+    env.tx.chain_id = tx.ftx_chain_id();
 
     // Type 1, EIP-2930
-    env.tx.access_list = tx.access_list().cloned().unwrap_or_default();
+    env.tx.access_list = tx.ftx_access_list().cloned().unwrap_or_default();
 
     // Type 2, EIP-1559
-    env.tx.gas_price = tx.gas_price().or(tx.max_fee_per_gas()).unwrap_or_default();
-    env.tx.gas_priority_fee = tx.max_priority_fee_per_gas();
+    env.tx.gas_price = tx.ftx_gas_price().or(tx.ftx_max_fee_per_gas()).unwrap_or_default();
+    env.tx.gas_priority_fee = tx.ftx_max_priority_fee_per_gas();
 
     // Type 3, EIP-4844
     env.tx.blob_hashes = tx.blob_versioned_hashes().unwrap_or_default().to_vec();
