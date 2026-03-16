@@ -88,12 +88,7 @@ pub trait DatabaseExt: Database<Error = DatabaseError> + DatabaseCommit + Debug 
     /// A state snapshot is associated with a new unique id that's created for the snapshot.
     /// State snapshots can be reverted: [DatabaseExt::revert_state], however, depending on the
     /// [RevertStateSnapshotAction], it will keep the snapshot alive or delete it.
-    fn snapshot_state(
-        &mut self,
-        journaled_state: &JournaledState,
-        evm_env: &EvmEnv,
-        tx_env: &TxEnv,
-    ) -> U256;
+    fn snapshot_state(&mut self, journaled_state: &JournaledState, evm_env: &EvmEnv) -> U256;
 
     /// Reverts the snapshot if it exists
     ///
@@ -789,18 +784,16 @@ impl Backend {
     /// Initializes settings we need to keep track of.
     ///
     /// We need to track these mainly to prevent issues when switching between different evms
-    pub(crate) fn initialize(&mut self, env: &Env) {
-        self.set_caller(env.tx.caller);
-        self.set_spec_id(env.evm_env.cfg_env.spec);
+    pub(crate) fn initialize(&mut self, spec_id: SpecId, caller: Address, tx_kind: TxKind) {
+        self.set_caller(caller);
+        self.set_spec_id(spec_id);
 
-        let test_contract = match env.tx.kind {
+        let test_contract = match tx_kind {
             TxKind::Call(to) => to,
             TxKind::Create => {
-                let nonce = self
-                    .basic_ref(env.tx.caller)
-                    .map(|b| b.unwrap_or_default().nonce)
-                    .unwrap_or_default();
-                env.tx.caller.create(nonce)
+                let nonce =
+                    self.basic_ref(caller).map(|b| b.unwrap_or_default().nonce).unwrap_or_default();
+                caller.create(nonce)
             }
         };
         self.set_test_contract(test_contract);
@@ -816,7 +809,7 @@ impl Backend {
         env: &mut Env,
         inspector: I,
     ) -> eyre::Result<ResultAndState> {
-        self.initialize(env);
+        self.initialize(env.evm_env.cfg_env.spec, env.tx.caller, env.tx.kind);
         let mut evm = crate::evm::new_evm_with_inspector(
             self,
             env.evm_env.to_owned(),
@@ -965,18 +958,12 @@ impl Backend {
 }
 
 impl DatabaseExt for Backend {
-    fn snapshot_state(
-        &mut self,
-        journaled_state: &JournaledState,
-        evm_env: &EvmEnv,
-        tx_env: &TxEnv,
-    ) -> U256 {
+    fn snapshot_state(&mut self, journaled_state: &JournaledState, evm_env: &EvmEnv) -> U256 {
         trace!("create snapshot");
         let id = self.inner.state_snapshots.insert(BackendStateSnapshot::new(
             self.create_db_snapshot(),
             journaled_state.clone(),
             evm_env.clone(),
-            tx_env.clone(),
         ));
         trace!(target: "backend", "Created new snapshot {}", id);
         id
@@ -1010,8 +997,7 @@ impl DatabaseExt for Backend {
 
             // merge additional logs
             snapshot.merge(current_state);
-            let BackendStateSnapshot { db, mut journaled_state, snap_evm_env, snap_tx_env: _ } =
-                snapshot;
+            let BackendStateSnapshot { db, mut journaled_state, snap_evm_env } = snapshot;
             match db {
                 BackendDatabaseSnapshot::InMemory(mem_db) => {
                     self.mem_db = mem_db;
