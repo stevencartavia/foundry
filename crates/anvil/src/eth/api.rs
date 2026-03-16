@@ -127,7 +127,7 @@ pub struct EthApi<N: Network> {
     /// allows to enabled/disable logging
     logger: LoggingManager,
     /// Tracks all active filters
-    filters: Filters,
+    filters: Filters<N>,
     /// How transactions are ordered in the pool
     transaction_order: Arc<RwLock<TransactionOrder>>,
     /// Whether we're listening for RPC calls
@@ -168,7 +168,7 @@ impl<N: Network> EthApi<N> {
         fee_history_limit: u64,
         miner: Miner<N::TxEnvelope>,
         logger: LoggingManager,
-        filters: Filters,
+        filters: Filters<N>,
         transactions_order: TransactionOrder,
     ) -> Self {
         Self {

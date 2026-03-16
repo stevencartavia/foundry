@@ -130,7 +130,7 @@ impl PubSubEthRpcHandler {
 impl PubSubRpcHandler for PubSubEthRpcHandler {
     type Request = EthRpcCall;
     type SubscriptionId = SubscriptionId;
-    type Subscription = EthSubscription;
+    type Subscription = EthSubscription<FoundryNetwork>;
 
     async fn on_request(&self, request: Self::Request, cx: PubSubContext<Self>) -> ResponseResult {
         trace!(target: "rpc", "received pubsub request {:?}", request);
