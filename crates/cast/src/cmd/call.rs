@@ -2,7 +2,6 @@ use super::run::fetch_contracts_bytecode_from_trace;
 use crate::{
     Cast,
     debug::handle_traces,
-    rlp_converter::TryIntoRlpEncodable,
     traces::TraceKind,
     tx::{CastTxBuilder, SenderKind},
 };
@@ -233,7 +232,6 @@ impl CallArgs {
     pub async fn run_with_network<N: Network + Unpin>(self) -> Result<()>
     where
         N::TxEnvelope: Serialize + UIfmtSignatureExt,
-        N::Header: TryIntoRlpEncodable,
         N::TransactionRequest: FoundryTransactionBuilder<N>,
         N::TransactionResponse: UIfmt,
         N::HeaderResponse: UIfmtHeaderExt,
@@ -345,7 +343,7 @@ impl CallArgs {
             let value = tx.value().unwrap_or_default();
             let input = tx.input().cloned().unwrap_or_default();
             let tx_kind = tx.kind().expect("set by builder");
-            let env_tx = &mut executor.env_mut().tx;
+            let env_tx = executor.tx_env_mut();
 
             // Set transaction options with --trace
             if let Some(gas_limit) = tx.gas_limit() {
