@@ -1763,7 +1763,6 @@ impl EthApi<FoundryNetwork> {
         self.add_pending_transaction(pending_transaction, requires, provides)
     }
 
-    // TODO: generalize return type once N::ReceiptEnvelope is constructable
     /// Waits for a transaction to be included in a block and returns its receipt (no timeout).
     async fn await_transaction_inclusion(&self, hash: TxHash) -> Result<FoundryTxReceipt> {
         let mut stream = self.new_block_notifications();
@@ -1783,7 +1782,6 @@ impl EthApi<FoundryNetwork> {
         Err(BlockchainError::Message("Failed to await transaction inclusion".to_string()))
     }
 
-    // TODO: generalize return type once N::ReceiptEnvelope is constructable
     /// Waits for a transaction to be included in a block and returns its receipt, with timeout.
     async fn check_transaction_inclusion(&self, hash: TxHash) -> Result<FoundryTxReceipt> {
         const TIMEOUT_DURATION: Duration = Duration::from_secs(30);
@@ -1798,7 +1796,7 @@ impl EthApi<FoundryNetwork> {
     }
 
     /// Sends a transaction and waits for receipt
-    // TODO: generalize return type once N::ReceiptEnvelope is constructable
+    ///
     /// Handler for ETH RPC call: `eth_sendTransactionSync`
     pub async fn send_transaction_sync(
         &self,
@@ -1850,7 +1848,6 @@ impl EthApi<FoundryNetwork> {
         Ok(*tx.hash())
     }
 
-    // TODO: generalize return type once N::ReceiptEnvelope is constructable
     /// Sends signed transaction, returning its receipt.
     ///
     /// Handler for ETH RPC call: `eth_sendRawTransactionSync`
@@ -2228,7 +2225,6 @@ impl EthApi<FoundryNetwork> {
         Ok(None)
     }
 
-    // TODO: generalize return type once N::ReceiptEnvelope is constructable
     /// Returns transaction receipt by transaction hash.
     ///
     /// Handler for ETH RPC call: `eth_getTransactionReceipt`
@@ -2237,7 +2233,6 @@ impl EthApi<FoundryNetwork> {
         self.backend.transaction_receipt(hash).await
     }
 
-    // TODO: generalize return type once N::ReceiptEnvelope is constructable
     /// Returns block receipts by block number.
     ///
     /// Handler for ETH RPC call: `eth_getBlockReceipts`
