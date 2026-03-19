@@ -2249,7 +2249,8 @@ where
 
                 // 4. Create executor via AnvilBlockExecutorFactory
                 let exec_ctx = AnvilExecutionCtx { parent_hash: best_hash, is_prague, is_cancun };
-                let mut executor = AnvilBlockExecutorFactory::create_executor(evm, exec_ctx);
+                let mut executor =
+                    AnvilBlockExecutorFactory::create_foundry_executor(evm, exec_ctx);
                 executor.apply_pre_execution_changes().expect("pre-execution changes failed");
 
                 // 5. Per-tx loop
@@ -2694,7 +2695,7 @@ where
         }
 
         let exec_ctx = AnvilExecutionCtx { parent_hash, is_prague, is_cancun };
-        let mut executor = AnvilBlockExecutorFactory::create_executor(evm, exec_ctx);
+        let mut executor = AnvilBlockExecutorFactory::create_foundry_executor(evm, exec_ctx);
         executor.apply_pre_execution_changes().expect("pre-execution changes failed");
 
         let mut transaction_infos: Vec<TransactionInfo> = Vec::new();
@@ -3301,7 +3302,7 @@ where
             let exec_ctx =
                 AnvilExecutionCtx { parent_hash: block.header.parent_hash, is_prague, is_cancun };
             let mut replay_executor =
-                AnvilBlockExecutorFactory::create_executor(evm_replay, exec_ctx);
+                AnvilBlockExecutorFactory::create_foundry_executor(evm_replay, exec_ctx);
             replay_executor.apply_pre_execution_changes().expect("pre-execution changes failed");
 
             let blob_params = self.blob_params();

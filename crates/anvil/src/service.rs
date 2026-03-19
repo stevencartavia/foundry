@@ -46,7 +46,7 @@ pub struct NodeService<N: Network> {
 impl<N: Network> NodeService<N>
 where
     Backend<N>: TransactionValidator<N::TxEnvelope>,
-    N: Network<TxEnvelope = FoundryTxEnvelope, ReceiptEnvelope = FoundryReceiptEnvelope>,
+    N: Network<TxEnvelope = FoundryTxEnvelope>,
 {
     pub fn new(
         pool: Arc<Pool<N::TxEnvelope>>,
@@ -127,7 +127,7 @@ struct BlockProducer<N: Network> {
 impl<N: Network> BlockProducer<N>
 where
     Backend<N>: TransactionValidator<N::TxEnvelope>,
-    N: Network<TxEnvelope = FoundryTxEnvelope, ReceiptEnvelope = FoundryReceiptEnvelope>,
+    N: Network<TxEnvelope = FoundryTxEnvelope>,
 {
     fn new(backend: Arc<Backend<N>>) -> Self {
         Self { idle_backend: Some(backend), block_mining: None, queued: Default::default() }

@@ -13,10 +13,7 @@ use alloy_evm::{
         BlockExecutionError, BlockExecutionResult, BlockExecutor, BlockValidationError,
         ExecutableTx, OnStateHook, StateChangeSource, StateDB, TxResult,
     },
-    eth::{
-        EthEvmContext, EthTxResult,
-        receipt_builder::{ReceiptBuilder, ReceiptBuilderCtx},
-    },
+    eth::{EthEvmContext, EthTxResult},
     precompiles::PrecompilesMap,
 };
 use alloy_op_evm::OpEvmFactory;
@@ -29,22 +26,50 @@ use op_revm::{OpContext, OpTransaction};
 use revm::{
     Database, DatabaseCommit, Inspector,
     context::{Block as RevmBlock, TxEnv},
-    context_interface::result::ResultAndState,
+    context_interface::result::{ExecutionResult, ResultAndState},
 };
 use std::{fmt, fmt::Debug};
 
-/// Receipt builder for Foundry/Anvil that handles all transaction types
+/// Extended receipt-building context that carries `sender`.
+///
+/// Mirrors [`alloy_evm::eth::receipt_builder::ReceiptBuilderCtx`] with an
+/// additional `sender` field needed for deposit nonce resolution.
+#[derive(Debug)]
+pub struct AnvilReceiptBuilderCtx<'a, T, E: Evm> {
+    pub tx_type: T,
+    pub sender: Address,
+    pub evm: &'a E,
+    pub result: ExecutionResult<E::HaltReason>,
+    pub state: &'a revm::state::EvmState,
+    pub cumulative_gas_used: u64,
+}
+
+/// Receipt builder for Anvil block execution.
+///
+/// Mirrors [`alloy_evm::eth::receipt_builder::ReceiptBuilder`] but uses
+/// [`AnvilReceiptBuilderCtx`] which carries `sender: Address`.
+pub trait AnvilReceiptBuilder: fmt::Debug + Send + Sync + 'static {
+    type Transaction: TransactionEnvelope + Encodable2718;
+    type Receipt: alloy_consensus::TxReceipt<Log = alloy_primitives::Log> + Clone + fmt::Debug;
+
+    fn build_receipt<E: Evm>(
+        &self,
+        ctx: AnvilReceiptBuilderCtx<'_, <Self::Transaction as TransactionEnvelope>::TxType, E>,
+    ) -> Self::Receipt;
+}
+
+/// Receipt builder for Foundry that handles all [`FoundryTxType`] variants.
 #[derive(Debug, Default, Clone, Copy)]
 #[non_exhaustive]
 pub struct FoundryReceiptBuilder;
 
-impl ReceiptBuilder for FoundryReceiptBuilder {
+impl AnvilReceiptBuilder for FoundryReceiptBuilder {
     type Transaction = FoundryTxEnvelope;
     type Receipt = FoundryReceiptEnvelope;
 
     fn build_receipt<E: Evm>(
         &self,
-        ctx: ReceiptBuilderCtx<'_, FoundryTxType, E>,
+        ctx: AnvilReceiptBuilderCtx<'_, FoundryTxType, E>,
     ) -> FoundryReceiptEnvelope {
         let receipt = alloy_consensus::Receipt {
             status: Eip658Value::Eip658(ctx.result.is_success()),
@@ -59,10 +84,18 @@ impl ReceiptBuilder for FoundryReceiptBuilder {
             FoundryTxType::Eip1559 => FoundryReceiptEnvelope::Eip1559(receipt),
             FoundryTxType::Eip4844 => FoundryReceiptEnvelope::Eip4844(receipt),
             FoundryTxType::Eip7702 => FoundryReceiptEnvelope::Eip7702(receipt),
-            FoundryTxType::Deposit => {
-                unreachable!("deposit receipts are built in commit_transaction")
-            }
             FoundryTxType::Tempo => FoundryReceiptEnvelope::Tempo(receipt),
+            FoundryTxType::Deposit => {
+                let deposit_nonce = ctx.state.get(&ctx.sender).map(|acc| acc.info.nonce);
+                FoundryReceiptEnvelope::Deposit(op_alloy_consensus::OpDepositReceiptWithBloom {
+                    receipt: op_alloy_consensus::OpDepositReceipt {
+                        inner: receipt.receipt,
+                        deposit_nonce,
+                        deposit_receipt_version: deposit_nonce.map(|_| 1),
+                    },
+                    logs_bloom: receipt.logs_bloom,
+                })
+            }
         }
     }
 }
@@ -71,12 +104,12 @@ impl ReceiptBuilder for FoundryReceiptBuilder {
 ///
 /// Wraps [`EthTxResult`] with the sender address, needed for deposit nonce resolution.
 #[derive(Debug)]
-pub struct AnvilTxResult<H> {
-    pub inner: EthTxResult<H, FoundryTxType>,
+pub struct AnvilTxResult<H, T = FoundryTxType> {
+    pub inner: EthTxResult<H, T>,
     pub sender: Address,
 }
 
-impl<H> TxResult for AnvilTxResult<H> {
+impl<H, T> TxResult for AnvilTxResult<H, T> {
     type HaltReason = H;
 
     fn result(&self) -> &ResultAndState<Self::HaltReason> {
@@ -98,18 +131,18 @@ pub struct AnvilExecutionCtx {
 
 /// Block executor for Anvil that implements [`BlockExecutor`].
 ///
-/// Wraps an EVM instance and produces [`FoundryReceiptEnvelope`] receipts.
+/// Wraps an EVM instance and produces receipts via a pluggable [`AnvilReceiptBuilder`].
 /// Validation (gas limits, blob gas, transaction validity) is handled by the
 /// caller before transactions are fed to this executor.
-pub struct AnvilBlockExecutor<E> {
+pub struct AnvilBlockExecutor<E, RB: AnvilReceiptBuilder = FoundryReceiptBuilder> {
     /// The EVM instance used for execution.
     evm: E,
     /// Execution context.
     ctx: AnvilExecutionCtx,
     /// Receipt builder.
-    receipt_builder: FoundryReceiptBuilder,
+    receipt_builder: RB,
     /// Receipts of executed transactions.
-    receipts: Vec<FoundryReceiptEnvelope>,
+    receipts: Vec<RB::Receipt>,
     /// Total gas used by transactions in this block.
     gas_used: u64,
     /// Blob gas used by the block.
@@ -118,7 +151,7 @@ pub struct AnvilBlockExecutor<E> {
     state_hook: Option<Box<dyn OnStateHook>>,
 }
 
-impl<E: fmt::Debug> fmt::Debug for AnvilBlockExecutor<E> {
+impl<E: fmt::Debug, RB: AnvilReceiptBuilder> fmt::Debug for AnvilBlockExecutor<E, RB> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AnvilBlockExecutor")
             .field("evm", &self.evm)
@@ -130,13 +163,13 @@ impl<E: fmt::Debug> fmt::Debug for AnvilBlockExecutor<E> {
     }
 }
 
-impl<E> AnvilBlockExecutor<E> {
+impl<E, RB: AnvilReceiptBuilder> AnvilBlockExecutor<E, RB> {
     /// Creates a new [`AnvilBlockExecutor`].
-    pub fn new(evm: E, ctx: AnvilExecutionCtx) -> Self {
+    pub fn new(evm: E, ctx: AnvilExecutionCtx, receipt_builder: RB) -> Self {
         Self {
             evm,
             ctx,
-            receipt_builder: FoundryReceiptBuilder,
+            receipt_builder,
             receipts: Vec::new(),
             gas_used: 0,
             blob_gas_used: 0,
@@ -145,17 +178,15 @@ impl<E> AnvilBlockExecutor<E> {
     }
 }
 
-impl<E> BlockExecutor for AnvilBlockExecutor<E>
+impl<E, RB> BlockExecutor for AnvilBlockExecutor<E, RB>
 where
-    E: Evm<
-            DB: StateDB,
-            Tx: FromRecoveredTx<FoundryTxEnvelope> + FromTxWithEncoded<FoundryTxEnvelope>,
-        >,
+    E: Evm<DB: StateDB, Tx: FromRecoveredTx<RB::Transaction> + FromTxWithEncoded<RB::Transaction>>,
+    RB: AnvilReceiptBuilder,
 {
-    type Transaction = FoundryTxEnvelope;
-    type Receipt = FoundryReceiptEnvelope;
+    type Transaction = RB::Transaction;
+    type Receipt = RB::Receipt;
     type Evm = E;
-    type Result = AnvilTxResult<E::HaltReason>;
+    type Result = AnvilTxResult<E::HaltReason, <RB::Transaction as TransactionEnvelope>::TxType>;
 
     fn apply_pre_execution_changes(&mut self) -> Result<(), BlockExecutionError> {
         // EIP-2935: store parent block hash in history storage contract.
@@ -231,31 +262,14 @@ where
             self.blob_gas_used = self.blob_gas_used.saturating_add(blob_gas_used);
         }
 
-        let receipt = if tx_type == FoundryTxType::Deposit {
-            let deposit_nonce = state.get(&sender).map(|acc| acc.info.nonce);
-            let receipt = alloy_consensus::Receipt {
-                status: Eip658Value::Eip658(result.is_success()),
-                cumulative_gas_used: self.gas_used,
-                logs: result.into_logs(),
-            }
-            .with_bloom();
-            FoundryReceiptEnvelope::Deposit(op_alloy_consensus::OpDepositReceiptWithBloom {
-                receipt: op_alloy_consensus::OpDepositReceipt {
-                    inner: receipt.receipt,
-                    deposit_nonce,
-                    deposit_receipt_version: deposit_nonce.map(|_| 1),
-                },
-                logs_bloom: receipt.logs_bloom,
-            })
-        } else {
-            self.receipt_builder.build_receipt(ReceiptBuilderCtx {
-                tx_type,
-                evm: &self.evm,
-                result,
-                state: &state,
-                cumulative_gas_used: self.gas_used,
-            })
-        };
+        let receipt = self.receipt_builder.build_receipt(AnvilReceiptBuilderCtx {
+            tx_type,
+            sender,
+            evm: &self.evm,
+            result,
+            state: &state,
+            cumulative_gas_used: self.gas_used,
+        });
 
         self.receipts.push(receipt);
         self.evm.db_mut().commit(state);
@@ -263,10 +277,7 @@ where
         Ok(gas_used)
     }
 
-    fn finish(
-        self,
-    ) -> Result<(Self::Evm, BlockExecutionResult<FoundryReceiptEnvelope>), BlockExecutionError>
-    {
+    fn finish(self) -> Result<(Self::Evm, BlockExecutionResult<RB::Receipt>), BlockExecutionError> {
         Ok((
             self.evm,
             BlockExecutionResult {
@@ -290,7 +301,7 @@ where
         &self.evm
     }
 
-    fn receipts(&self) -> &[FoundryReceiptEnvelope] {
+    fn receipts(&self) -> &[RB::Receipt] {
         &self.receipts
     }
 }
@@ -298,14 +309,28 @@ where
 pub struct AnvilBlockExecutorFactory;
 
 impl AnvilBlockExecutorFactory {
-    pub fn create_executor<DB>(
+    /// Generic constructor — custom networks pass their own `receipt_builder`.
+    pub fn create_executor<DB, RB>(
+        evm: EitherEvm<DB, AnvilInspector, PrecompilesMap>,
+        ctx: AnvilExecutionCtx,
+        receipt_builder: RB,
+    ) -> AnvilBlockExecutor<EitherEvm<DB, AnvilInspector, PrecompilesMap>, RB>
+    where
+        DB: StateDB,
+        RB: AnvilReceiptBuilder,
+    {
+        AnvilBlockExecutor::new(evm, ctx, receipt_builder)
+    }
+
+    /// Convenience wrapper using the default [`FoundryReceiptBuilder`].
+    pub fn create_foundry_executor<DB>(
         evm: EitherEvm<DB, AnvilInspector, PrecompilesMap>,
         ctx: AnvilExecutionCtx,
     ) -> AnvilBlockExecutor<EitherEvm<DB, AnvilInspector, PrecompilesMap>>
     where
         DB: StateDB,
     {
-        AnvilBlockExecutor::new(evm, ctx)
+        Self::create_executor(evm, ctx, FoundryReceiptBuilder)
     }
 }
 
