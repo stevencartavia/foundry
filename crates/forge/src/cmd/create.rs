@@ -33,6 +33,7 @@ use foundry_config::{
     merge_impl_figment_convert,
 };
 use foundry_primitives::FoundryTransactionBuilder;
+use foundry_wallets::{TempoAccessKeyConfig, WalletSigner};
 use serde_json::json;
 use std::{borrow::Borrow, marker::PhantomData, path::PathBuf, sync::Arc, time::Duration};
 use tempo_alloy::TempoNetwork;
@@ -105,14 +106,288 @@ pub struct CreateArgs {
 impl CreateArgs {
     /// Executes the command to create a contract
     pub async fn run(self) -> Result<()> {
-        if self.tx.tempo.is_tempo() {
-            self.run_generic::<TempoNetwork>().await
+        let (signer, tempo_access_key) = self.eth.wallet.maybe_signer().await?;
+
+        if let Some(tempo_access_key) = tempo_access_key {
+            self.run_tempo_keychain(
+                signer.expect("signer required for access key"),
+                tempo_access_key,
+            )
+            .await
+        } else if self.tx.tempo.is_tempo() {
+            self.run_generic::<TempoNetwork>(signer).await
         } else {
-            self.run_generic::<AnyNetwork>().await
+            self.run_generic::<AnyNetwork>(signer).await
         }
     }
 
-    async fn run_generic<N: Network>(mut self) -> Result<()>
+    /// Handles Tempo access key (keychain mode) deployments.
+    ///
+    /// Bypasses `EthereumWallet` and manually constructs a `KeychainSignature`,
+    /// then sends the raw transaction.
+    async fn run_tempo_keychain(
+        mut self,
+        signer: WalletSigner,
+        access_key: TempoAccessKeyConfig,
+    ) -> Result<()> {
+        // Inject access key ID into TempoOpts so it's set before gas estimation.
+        self.tx.tempo.key_id = Some(access_key.key_address);
+
+        let mut config = self.load_config()?;
+
+        if install::install_missing_dependencies(&mut config).await && config.auto_detect_remappings
+        {
+            config = self.load_config()?;
+        }
+
+        let project = config.project()?;
+
+        let target_path = if let Some(ref mut path) = self.contract.path {
+            canonicalize(project.root().join(path))?
+        } else {
+            project.find_contract_path(&self.contract.name)?
+        };
+
+        let output = compile::compile_target(&target_path, &project, shell::is_json())?;
+        let (abi, bin, id) = find_contract_artifacts(output, &target_path, &self.contract.name)?;
+
+        let bin = match bin.object {
+            BytecodeObject::Bytecode(_) => bin.object,
+            _ => {
+                let link_refs = bin
+                    .link_references
+                    .iter()
+                    .flat_map(|(path, names)| {
+                        names.keys().map(move |name| format!("\t{name}: {path}"))
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n");
+                eyre::bail!(
+                    "Dynamic linking not supported in `create` command - deploy the following library contracts first, then provide the address to link at compile time\n{}",
+                    link_refs
+                )
+            }
+        };
+
+        let params = if let Some(constructor) = &abi.constructor {
+            let constructor_args =
+                self.constructor_args_path.clone().map(read_constructor_args_file).transpose()?;
+            self.parse_constructor_args(
+                constructor,
+                constructor_args.as_deref().unwrap_or(&self.constructor_args),
+            )?
+        } else {
+            vec![]
+        };
+
+        let provider = ProviderBuilder::<TempoNetwork>::from_config(&config)?.build()?;
+
+        let chain_id = if let Some(chain_id) = self.chain_id() {
+            chain_id
+        } else {
+            provider.get_chain_id().await?
+        };
+
+        let dry_run = !self.broadcast;
+        let timeout = config.transaction_timeout;
+        let deployer_address = access_key.wallet_address;
+
+        let provider = Arc::new(provider);
+
+        let bin_bytes = bin.into_bytes().unwrap_or_default();
+        if bin_bytes.is_empty() {
+            eyre::bail!("no bytecode found in bin object for {}", self.contract.name)
+        }
+
+        let factory = ContractFactory::<TempoNetwork, _>::new(
+            abi.clone(),
+            bin_bytes.clone(),
+            provider.clone(),
+            timeout,
+        );
+
+        let is_args_empty = params.is_empty();
+        let mut deployer =
+            factory.deploy_tokens(params.clone()).context("failed to deploy contract").map_err(
+                |e| {
+                    if is_args_empty {
+                        e.wrap_err("no arguments provided for contract constructor; consider --constructor-args or --constructor-args-path")
+                    } else {
+                        e
+                    }
+                },
+            )?;
+
+        let is_legacy = self.tx.legacy || Chain::from(chain_id).is_legacy();
+
+        deployer.tx.set_from(deployer_address);
+        deployer.tx.set_chain_id(chain_id);
+        if deployer.tx.to().is_none() {
+            deployer.tx.set_create();
+        }
+
+        self.tx.apply::<TempoNetwork>(&mut deployer.tx, is_legacy);
+
+        if self.tx.nonce.is_none() && !self.tx.tempo.expiring_nonce {
+            deployer.tx.set_nonce(provider.get_transaction_count(deployer_address).await?);
+        }
+
+        if let Some(access_list) = match self.tx.access_list {
+            None => None,
+            Some(None) => Some(provider.create_access_list(&deployer.tx).await?.access_list),
+            Some(Some(ref access_list)) => Some(access_list.clone()),
+        } {
+            deployer.tx.set_access_list(access_list);
+        }
+
+        if self.tx.gas_limit.is_none() {
+            deployer.tx.set_gas_limit(provider.estimate_gas(deployer.tx.clone()).await?);
+        }
+
+        if is_legacy {
+            if self.tx.gas_price.is_none() {
+                deployer.tx.set_gas_price(provider.get_gas_price().await?);
+            }
+        } else if self.tx.gas_price.is_none() || self.tx.priority_gas_price.is_none() {
+            let estimate = provider.estimate_eip1559_fees().await.wrap_err("Failed to estimate EIP1559 fees. This chain might not support EIP1559, try adding --legacy to your command.")?;
+            if self.tx.priority_gas_price.is_none() {
+                deployer.tx.set_max_priority_fee_per_gas(estimate.max_priority_fee_per_gas);
+            }
+            if self.tx.gas_price.is_none() {
+                deployer.tx.set_max_fee_per_gas(estimate.max_fee_per_gas);
+            }
+        }
+
+        let mut constructor_args = None;
+        if self.verify {
+            if !params.is_empty() {
+                let encoded_args = abi
+                    .constructor()
+                    .ok_or_else(|| eyre::eyre!("could not find constructor"))?
+                    .abi_encode_input(&params)?;
+                constructor_args = Some(hex::encode(encoded_args));
+            }
+
+            self.verify_preflight_check(constructor_args.clone(), chain_id, &id).await?;
+        }
+
+        if dry_run {
+            if !shell::is_json() {
+                sh_warn!("Dry run enabled, not broadcasting transaction\n")?;
+                sh_println!("Contract: {}", self.contract.name)?;
+                sh_println!(
+                    "Transaction: {}",
+                    serde_json::to_string_pretty(&deployer.tx.clone())?
+                )?;
+                sh_println!("ABI: {}\n", serde_json::to_string_pretty(&abi)?)?;
+                sh_warn!(
+                    "To broadcast this transaction, add --broadcast to the previous command. See forge create --help for more."
+                )?;
+            } else {
+                let output = json!({
+                    "contract": self.contract.name,
+                    "transaction": &deployer.tx,
+                    "abi": &abi
+                });
+                sh_println!("{}", serde_json::to_string_pretty(&output)?)?;
+            }
+            return Ok(());
+        }
+
+        // Sign and send with access key
+        let mut tx_request = deployer.tx;
+
+        // Only include key_authorization if the key is not yet provisioned on-chain.
+        if let Some(auth) = access_key.key_authorization
+            && !foundry_wallets::tempo::is_key_provisioned(
+                provider.as_ref(),
+                access_key.wallet_address,
+                access_key.key_address,
+            )
+            .await
+        {
+            tx_request.set_key_authorization(auth);
+        }
+
+        let raw_tx = foundry_wallets::tempo::sign_with_access_key(
+            tx_request,
+            &signer,
+            access_key.wallet_address,
+        )
+        .await?;
+        let pending = provider.send_raw_transaction(&raw_tx).await?;
+        let tx_hash = *pending.tx_hash();
+        let receipt = pending
+            .with_required_confirmations(1)
+            .with_timeout(Some(Duration::from_secs(timeout)))
+            .get_receipt()
+            .await?;
+        let address =
+            receipt.contract_address().ok_or_else(|| eyre::eyre!("contract was not deployed"))?;
+
+        if shell::is_json() {
+            let output = json!({
+                "deployer": deployer_address.to_string(),
+                "deployedTo": address.to_string(),
+                "transactionHash": tx_hash
+            });
+            sh_println!("{}", serde_json::to_string_pretty(&output)?)?;
+        } else {
+            sh_println!("Deployer: {deployer_address}")?;
+            sh_println!("Deployed to: {address}")?;
+            sh_println!("Transaction hash: {tx_hash:?}")?;
+        };
+
+        if !self.verify {
+            return Ok(());
+        }
+
+        sh_println!("Starting contract verification...")?;
+
+        let num_of_optimizations = if let Some(optimizer) = self.build.compiler.optimize {
+            if optimizer { Some(self.build.compiler.optimizer_runs.unwrap_or(200)) } else { None }
+        } else {
+            self.build.compiler.optimizer_runs
+        };
+
+        let verify = VerifyArgs {
+            address,
+            contract: Some(self.contract),
+            compiler_version: Some(id.version.to_string()),
+            constructor_args,
+            constructor_args_path: None,
+            no_auto_detect: false,
+            use_solc: None,
+            num_of_optimizations,
+            etherscan: EtherscanOpts {
+                key: self.eth.etherscan.key(),
+                chain: Some(chain_id.into()),
+            },
+            rpc: Default::default(),
+            flatten: false,
+            force: false,
+            skip_is_verified_check: true,
+            watch: true,
+            retry: self.retry,
+            libraries: self.build.libraries.clone(),
+            root: None,
+            verifier: self.verifier,
+            via_ir: self.build.via_ir,
+            evm_version: self.build.compiler.evm_version,
+            show_standard_json_input: self.show_standard_json_input,
+            guess_constructor_args: false,
+            compilation_profile: Some(id.profile.to_string()),
+            language: None,
+            creation_transaction_hash: Some(tx_hash),
+        };
+        sh_println!("Waiting for {} to detect contract deployment...", verify.verifier.verifier)?;
+        verify.run().await
+    }
+
+    async fn run_generic<N: Network>(
+        mut self,
+        pre_resolved_signer: Option<WalletSigner>,
+    ) -> Result<()>
     where
         N::TxEnvelope: From<Signed<N::UnsignedTx>>,
         N::UnsignedTx: SignableTransaction<Signature>,
@@ -200,7 +475,10 @@ impl CreateArgs {
             .await
         } else {
             // Deploy with signer
-            let signer = self.eth.wallet.signer().await?;
+            let signer = match pre_resolved_signer {
+                Some(s) => s,
+                None => self.eth.wallet.signer().await?,
+            };
             let deployer = signer.address();
             let provider = AlloyProviderBuilder::<_, _, N>::default()
                 .wallet(EthereumWallet::new(signer))

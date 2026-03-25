@@ -5143,6 +5143,7 @@ dependencies = [
  "alloy-eips 2.0.0-rc.0",
  "alloy-network",
  "alloy-primitives",
+ "alloy-provider",
  "alloy-rlp",
  "alloy-signer",
  "alloy-signer-aws",
