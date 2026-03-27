@@ -6,7 +6,7 @@ use crate::celo::transfer::{
     CELO_TRANSFER_ADDRESS, CELO_TRANSFER_LABEL, PRECOMPILE_ID_CELO_TRANSFER,
 };
 use alloy_chains::{
-    NamedChain,
+    Chain, NamedChain,
     NamedChain::{Chiado, Gnosis, Moonbase, Moonbeam, MoonbeamDev, Moonriver, Rsk, RskTestnet},
 };
 use alloy_eips::eip1559::BaseFeeParams;
@@ -92,38 +92,15 @@ impl NetworkConfigs {
         self.celo
     }
 
-    /// Returns true if the given chain ID is a known Tempo network.
-    pub fn is_tempo_chain_id(chain_id: u64) -> bool {
-        matches!(
-            chain_id,
-            4217    // Presto (mainnet)
-            | 42429 // Andantino (testnet)
-            | 42431 // Moderato
-        )
-    }
-
-    /// Returns true if the given chain ID is a known Optimism network.
-    pub fn is_optimism_chain_id(chain_id: u64) -> bool {
-        matches!(
-            NamedChain::try_from(chain_id),
-            Ok(NamedChain::Optimism
-                | NamedChain::OptimismGoerli
-                | NamedChain::OptimismSepolia
-                | NamedChain::OptimismKovan
-                | NamedChain::Base
-                | NamedChain::BaseGoerli
-                | NamedChain::BaseSepolia)
-        )
-    }
-
     pub fn with_chain_id(mut self, chain_id: u64) -> Self {
         // Only infer network if no explicit network is already set
         if !self.celo && !self.tempo && !self.optimism {
+            let chain = Chain::from_id(chain_id);
             if let Ok(NamedChain::Celo | NamedChain::CeloSepolia) = NamedChain::try_from(chain_id) {
                 self.celo = true;
-            } else if Self::is_tempo_chain_id(chain_id) {
+            } else if chain.is_tempo() {
                 self.tempo = true;
-            } else if Self::is_optimism_chain_id(chain_id) {
+            } else if chain.is_optimism() {
                 self.optimism = true;
             }
         }
