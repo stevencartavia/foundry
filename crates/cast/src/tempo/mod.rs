@@ -1,3 +1,5 @@
+pub mod iso4217;
+
 use alloy_primitives::Address;
 use alloy_provider::Provider;
 use tempo_alloy::{TempoNetwork, provider::TempoProviderExt};

@@ -1,11 +1,16 @@
 use std::{str::FromStr, time::Duration};
 
-use crate::{cmd::send::cast_send, format_uint_exp, tx::SendTxOpts};
+use crate::{
+    cmd::send::cast_send,
+    format_uint_exp,
+    tempo::iso4217::{is_iso4217_currency, iso4217_warning_message},
+    tx::SendTxOpts,
+};
 use alloy_consensus::{SignableTransaction, Signed};
 use alloy_eips::BlockId;
 use alloy_ens::NameOrAddress;
 use alloy_network::{AnyNetwork, EthereumWallet, Network, TransactionBuilder};
-use alloy_primitives::{U64, U256};
+use alloy_primitives::{B256, U64, U256};
 use alloy_provider::{Provider, fillers::RecommendedFillers};
 use alloy_signer::Signature;
 use alloy_sol_types::sol;
@@ -24,6 +29,7 @@ pub use foundry_config::{Chain, utils::*};
 use foundry_primitives::FoundryTransactionBuilder;
 use foundry_wallets::{TempoAccessKeyConfig, WalletSigner};
 use tempo_alloy::TempoNetwork;
+use tempo_contracts::precompiles::TIP20_FACTORY_ADDRESS;
 
 sol! {
     #[sol(rpc)]
@@ -39,6 +45,18 @@ sol! {
         function allowance(address owner, address spender) external view returns (uint256);
         function mint(address to, uint256 amount) external;
         function burn(uint256 amount) external;
+    }
+
+    #[sol(rpc)]
+    interface ITIP20Factory {
+        function createToken(
+            string memory name,
+            string memory symbol,
+            string memory currency,
+            address quoteToken,
+            address admin,
+            bytes32 salt
+        ) external returns (address token);
     }
 }
 
@@ -296,6 +314,42 @@ pub enum Erc20Subcommand {
         #[command(flatten)]
         tx: Erc20TxOpts,
     },
+
+    /// Create a new TIP-20 token via the TIP20Factory.
+    #[command(visible_alias = "c")]
+    Create {
+        /// The token name (e.g. "US Dollar Coin").
+        name: String,
+
+        /// The token symbol (e.g. "USDC").
+        symbol: String,
+
+        /// The ISO 4217 currency code (e.g. "USD", "EUR", "GBP").
+        /// This field is IMMUTABLE after creation and affects fee payment
+        /// eligibility, DEX routing, and quote token pairing.
+        currency: String,
+
+        /// The TIP-20 quote token address used for exchange pricing.
+        #[arg(value_parser = NameOrAddress::from_str)]
+        quote_token: NameOrAddress,
+
+        /// The admin address to receive DEFAULT_ADMIN_ROLE on the new token.
+        #[arg(value_parser = NameOrAddress::from_str)]
+        admin: NameOrAddress,
+
+        /// A unique salt for deterministic address derivation (hex-encoded bytes32).
+        salt: B256,
+
+        /// Skip the ISO 4217 currency code validation warning.
+        #[arg(long)]
+        force: bool,
+
+        #[command(flatten)]
+        send_tx: SendTxOpts,
+
+        #[command(flatten)]
+        tx: Erc20TxOpts,
+    },
 }
 
 impl Erc20Subcommand {
@@ -311,6 +365,7 @@ impl Erc20Subcommand {
             Self::TotalSupply { rpc, .. } => rpc,
             Self::Mint { send_tx, .. } => &send_tx.eth.rpc,
             Self::Burn { send_tx, .. } => &send_tx.eth.rpc,
+            Self::Create { send_tx, .. } => &send_tx.eth.rpc,
         }
     }
 
@@ -319,7 +374,8 @@ impl Erc20Subcommand {
             Self::Approve { tx, .. }
             | Self::Transfer { tx, .. }
             | Self::Mint { tx, .. }
-            | Self::Burn { tx, .. } => Some(tx),
+            | Self::Burn { tx, .. }
+            | Self::Create { tx, .. } => Some(tx),
             Self::Allowance { .. }
             | Self::Balance { .. }
             | Self::Name { .. }
@@ -335,7 +391,8 @@ impl Erc20Subcommand {
             Self::Transfer { send_tx, .. }
             | Self::Approve { send_tx, .. }
             | Self::Mint { send_tx, .. }
-            | Self::Burn { send_tx, .. } => {
+            | Self::Burn { send_tx, .. }
+            | Self::Create { send_tx, .. } => {
                 // Only attempt Tempo lookup if --from is set (avoids unnecessary I/O).
                 if send_tx.eth.wallet.from.is_some() {
                     let (s, ak) = send_tx.eth.wallet.maybe_signer().await?;
@@ -546,6 +603,75 @@ impl Erc20Subcommand {
                 erc20_send!(token, send_tx, tx_opts, |erc20, provider| {
                     erc20.burn(U256::from_str(&amount)?)
                 })
+            }
+            Self::Create {
+                name,
+                symbol,
+                currency,
+                quote_token,
+                admin,
+                salt,
+                force,
+                send_tx,
+                tx: tx_opts,
+            } => {
+                // Validate currency code against ISO 4217
+                if !is_iso4217_currency(&currency) && !force {
+                    sh_warn!("{}", iso4217_warning_message(&currency))?;
+                    let response: String = foundry_common::prompt!("\nContinue anyway? [y/N] ")?;
+                    if !matches!(response.trim(), "y" | "Y") {
+                        sh_println!("Aborted.")?;
+                        return Ok(());
+                    }
+                }
+
+                let timeout = send_tx.timeout.unwrap_or(config.transaction_timeout);
+                if let Some(ref access_key) = tempo_keychain {
+                    let signer =
+                        pre_resolved_signer.as_ref().expect("signer required for access key");
+                    let provider =
+                        ProviderBuilder::<TempoNetwork>::from_config(&config)?.build()?;
+                    let quote_token_addr = quote_token.resolve(&provider).await?;
+                    let admin_addr = admin.resolve(&provider).await?;
+                    let mut tx = ITIP20Factory::new(TIP20_FACTORY_ADDRESS, &provider)
+                        .createToken(name, symbol, currency, quote_token_addr, admin_addr, salt)
+                        .into_transaction_request();
+                    tx_opts.apply::<TempoNetwork>(
+                        &mut tx,
+                        get_chain(config.chain, &provider).await?.is_legacy(),
+                    );
+                    apply_tempo_access_key::<TempoNetwork>(&mut tx, Some(access_key));
+                    // TODO: pass `send_tx.sync` once `send_raw_sync` is added to `CastTxSender`
+                    send_tempo_keychain(
+                        &provider,
+                        tx,
+                        signer,
+                        access_key,
+                        send_tx.cast_async,
+                        send_tx.confirmations,
+                        timeout,
+                    )
+                    .await?
+                } else {
+                    let signer = pre_resolved_signer.unwrap_or(send_tx.eth.wallet.signer().await?);
+                    let provider = build_provider_with_signer::<N>(&send_tx, signer)?;
+                    let quote_token_addr = quote_token.resolve(&provider).await?;
+                    let admin_addr = admin.resolve(&provider).await?;
+                    let mut tx = ITIP20Factory::new(TIP20_FACTORY_ADDRESS, &provider)
+                        .createToken(name, symbol, currency, quote_token_addr, admin_addr, salt)
+                        .into_transaction_request();
+                    tx_opts
+                        .apply::<N>(&mut tx, get_chain(config.chain, &provider).await?.is_legacy());
+                    cast_send(
+                        provider,
+                        tx,
+                        send_tx.cast_async,
+                        send_tx.sync,
+                        send_tx.confirmations,
+                        timeout,
+                    )
+                    .await?
+                }
             }
         };
         Ok(())

@@ -58,6 +58,7 @@ alloy-ens = { workspace = true, features = ["provider"] }
 alloy-eips.workspace = true
 tempo-alloy.workspace = true
 tempo-primitives.workspace = true
+tempo-contracts.workspace = true
 alloy-evm.workspace = true
 
 op-alloy-flz.workspace = true
