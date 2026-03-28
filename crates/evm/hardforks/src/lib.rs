@@ -1,3 +1,8 @@
+//! EVM hardfork definitions for Foundry.
+//!
+//! Provides [`FoundryHardfork`], a unified enum over Ethereum, Optimism, and Tempo hardforks
+//! with `FromStr`/`Serialize`/`Deserialize` support for CLI and config usage.
+
 use std::str::FromStr;
 
 use alloy_rpc_types::BlockNumberOrTag;
