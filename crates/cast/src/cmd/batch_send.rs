@@ -31,7 +31,7 @@ use tempo_primitives::transaction::Call;
 /// Sends multiple calls as a single atomic Tempo transaction.
 #[derive(Debug, Parser)]
 pub struct BatchSendArgs {
-    /// Call specifications in format: to[:value][:sig[:args]] or to[:value][:0xdata]
+    /// Call specifications in format: `to[:<value>][:<sig>[:<args>]]` or `to[:<value>][:<0xdata>]`
     ///
     /// Examples:
     ///   --call "0x123:0.1ether" (ETH transfer)

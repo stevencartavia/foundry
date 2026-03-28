@@ -1,6 +1,6 @@
 //! Call specification parsing for batch transactions.
 //!
-//! Parses call specs in the format: `to[:value][:sig[:args]]` or `to[:value][:0xrawdata]`
+//! Parses call specs in the format: `to[:<value>][:<sig>[:<args>]]` or `to[:<value>][:<0xrawdata>]`
 //!
 //! Examples:
 //! - `0x123` - Just an address (empty call)
@@ -30,7 +30,7 @@ pub struct CallSpec {
 impl CallSpec {
     /// Parse a call spec string.
     ///
-    /// Format: `to[:value][:sig[:args]]` or `to[:value][:0xrawdata]`
+    /// Format: `to[:<value>][:<sig>[:<args>]]` or `to[:<value>][:<0xrawdata>]`
     ///
     /// The delimiter is `:` but we need to be careful about:
     /// - Colons in function signatures (none expected)

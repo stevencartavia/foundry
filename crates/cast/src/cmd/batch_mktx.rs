@@ -30,7 +30,7 @@ use tempo_primitives::transaction::Call;
 /// Creates a signed (or unsigned) batch transaction.
 #[derive(Debug, Parser)]
 pub struct BatchMakeTxArgs {
-    /// Call specifications in format: to[:value][:sig[:args]] or to[:value][:0xdata]
+    /// Call specifications in format: `to[:<value>][:<sig>[:<args>]]` or `to[:<value>][:<0xdata>]`
     ///
     /// Examples:
     ///   --call "0x123:0.1ether" (ETH transfer)
