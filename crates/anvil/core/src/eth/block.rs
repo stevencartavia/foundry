@@ -5,18 +5,16 @@ use alloy_consensus::{
 use alloy_eips::eip2718::Encodable2718;
 use alloy_network::Network;
 use foundry_primitives::FoundryTxEnvelope;
-use std::fmt::Debug;
 
 use crate::eth::transaction::MaybeImpersonatedTransaction;
 
-/// Type alias for Ethereum Block with Anvil's transaction type, generic over the transaction
-/// envelope with a default of [`FoundryTxEnvelope`].
+/// Type alias for a block containing potentially impersonated transactions.
 pub type Block<T = FoundryTxEnvelope> = alloy_consensus::Block<MaybeImpersonatedTransaction<T>>;
 
 /// Container type that gathers all block data, generic over a [`Network`].
 #[derive(Clone, Debug)]
 pub struct BlockInfo<N: Network> {
-    pub block: alloy_consensus::Block<MaybeImpersonatedTransaction<N::TxEnvelope>>,
+    pub block: Block<N::TxEnvelope>,
     pub transactions: Vec<TransactionInfo>,
     pub receipts: Vec<N::ReceiptEnvelope>,
 }
