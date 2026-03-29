@@ -7,8 +7,7 @@ use revm::{
     Database, DatabaseCommit,
     bytecode::Bytecode,
     database::{CacheDB, DatabaseRef, EmptyDB},
-    primitives::HashMap as Map,
-    state::{Account, AccountInfo},
+    state::{AccountInfo, EvmState},
 };
 
 /// Type alias for an in-memory database.
@@ -73,7 +72,7 @@ impl Database for MemDb {
 }
 
 impl DatabaseCommit for MemDb {
-    fn commit(&mut self, changes: Map<Address, Account>) {
+    fn commit(&mut self, changes: EvmState) {
         DatabaseCommit::commit(&mut self.inner, changes)
     }
 }

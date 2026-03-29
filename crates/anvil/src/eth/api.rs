@@ -3590,6 +3590,7 @@ impl TryFrom<Result<(InstructionResult, Option<Output>, u128, State)>> for GasEs
                 | InstructionResult::CreateContractStartingWithEF
                 | InstructionResult::CreateInitCodeSizeLimit
                 | InstructionResult::FatalExternalError => Ok(Self::EvmError(exit)),
+                _ => Ok(Self::EvmError(exit)),
             },
         }
     }

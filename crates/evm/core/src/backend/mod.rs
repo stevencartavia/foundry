@@ -24,8 +24,8 @@ use revm::{
     context_interface::{journaled_state::account::JournaledAccountTr, result::ResultAndState},
     database::{CacheDB, DatabaseRef},
     precompile::{PrecompileSpecId, Precompiles},
-    primitives::{HashMap as Map, KECCAK_EMPTY, Log, hardfork::SpecId},
-    state::{Account, AccountInfo, EvmState, EvmStorageSlot},
+    primitives::{KECCAK_EMPTY, Log, hardfork::SpecId},
+    state::{AccountInfo, EvmState, EvmStorageSlot},
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -574,8 +574,10 @@ where
     pub fn replace_account_storage(
         &mut self,
         address: Address,
-        storage: Map<U256, U256>,
+        storage: impl IntoIterator<Item = (U256, U256)>,
     ) -> Result<(), DatabaseError> {
+        let storage = storage.into_iter().collect();
+
         if let Some(db) = self.active_fork_db_mut() {
             db.replace_account_storage(address, storage)
         } else {
@@ -1563,7 +1565,7 @@ impl<N: Network> DatabaseCommit for Backend<N>
 where
     N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
 {
-    fn commit(&mut self, changes: Map<Address, Account>) {
+    fn commit(&mut self, changes: EvmState) {
         if let Some(db) = self.active_fork_db_mut() {
             db.commit(changes)
         } else {
@@ -2059,7 +2061,7 @@ pub fn update_state<DB: Database>(
 /// Applies the changeset of a transaction to the active journaled state and also commits it in the
 /// forked db
 fn apply_state_changeset<N: Network>(
-    state: Map<revm::primitives::Address, Account>,
+    state: EvmState,
     journaled_state: &mut JournaledState,
     fork: &mut Fork<N>,
     persistent_accounts: &HashSet<Address>,

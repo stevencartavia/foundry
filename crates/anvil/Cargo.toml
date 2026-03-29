@@ -30,6 +30,10 @@ foundry-evm.workspace = true
 foundry-evm-networks.workspace = true
 foundry-primitives.workspace = true
 tempo-primitives.workspace = true
+tempo-chainspec.workspace = true
+tempo-evm.workspace = true
+tempo-precompiles.workspace = true
+tempo-revm.workspace = true
 
 # alloy
 alloy-evm = { workspace = true, features = ["call-util"] }

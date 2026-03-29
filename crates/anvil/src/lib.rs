@@ -3,6 +3,12 @@
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+// Testing
+use tempo_chainspec as _;
+use tempo_evm as _;
+use tempo_precompiles as _;
+use tempo_revm as _;
+
 use crate::{
     error::{NodeError, NodeResult},
     eth::{

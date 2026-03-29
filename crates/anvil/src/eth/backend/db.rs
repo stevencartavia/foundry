@@ -9,10 +9,7 @@ use std::{
 use alloy_consensus::{BlockBody, Header};
 use alloy_eips::eip4895::Withdrawals;
 use alloy_evm::block::StateDB;
-use alloy_primitives::{
-    Address, B256, Bytes, U256, keccak256,
-    map::{AddressMap, HashMap},
-};
+use alloy_primitives::{Address, B256, Bytes, U256, keccak256, map::AddressMap};
 use alloy_rpc_types::BlockId;
 use anvil_core::eth::{
     block::Block,
@@ -95,11 +92,7 @@ pub trait MaybeForkedDatabase {
 /// blanket impl has an implicit `Sized` bound. Provide an explicit impl.
 impl alloy_evm::Database for dyn Db {}
 
-impl StateDB for dyn Db {
-    fn set_state_clear_flag(&mut self, _has_state_clear: bool) {
-        // Anvil does not use the revm State wrapper, so this is a no-op.
-    }
-}
+impl StateDB for dyn Db {}
 
 /// A wrapper around [`CacheDB`] that implements [`StateDB`].
 ///
@@ -172,12 +165,6 @@ impl<T: DatabaseRef<Error = DatabaseError>> DatabaseRef for AnvilCacheDB<T> {
 impl<T: DatabaseRef<Error = DatabaseError> + fmt::Debug> DatabaseCommit for AnvilCacheDB<T> {
     fn commit(&mut self, changes: revm::state::EvmState) {
         self.0.commit(changes)
-    }
-}
-
-impl<T: DatabaseRef<Error = DatabaseError> + fmt::Debug> StateDB for AnvilCacheDB<T> {
-    fn set_state_clear_flag(&mut self, _has_state_clear: bool) {
-        // Anvil does not use the revm State wrapper, so this is a no-op.
     }
 }
 
@@ -339,31 +326,37 @@ impl<T: DatabaseRef<Error = DatabaseError> + Debug> MaybeFullDatabase for CacheD
 
     fn clear_into_state_snapshot(&mut self) -> StateSnapshot {
         let db_accounts = std::mem::take(&mut self.cache.accounts);
-        let mut accounts = HashMap::default();
-        let mut account_storage = HashMap::default();
+        let mut accounts = alloy_primitives::map::AddressHashMap::default();
+        let mut account_storage = alloy_primitives::map::AddressHashMap::default();
 
         for (addr, mut acc) in db_accounts {
-            account_storage.insert(addr, std::mem::take(&mut acc.storage));
+            let storage: alloy_primitives::map::HashMap<U256, U256> =
+                std::mem::take(&mut acc.storage).into_iter().collect();
+            account_storage.insert(addr, storage);
             let mut info = acc.info;
             info.code = self.cache.contracts.remove(&info.code_hash);
             accounts.insert(addr, info);
         }
-        let block_hashes = std::mem::take(&mut self.cache.block_hashes);
+        let block_hashes: alloy_primitives::map::HashMap<U256, B256> =
+            std::mem::take(&mut self.cache.block_hashes).into_iter().collect();
         StateSnapshot { accounts, storage: account_storage, block_hashes }
     }
 
     fn read_as_state_snapshot(&self) -> StateSnapshot {
-        let mut accounts = HashMap::default();
-        let mut account_storage = HashMap::default();
+        let mut accounts = alloy_primitives::map::AddressHashMap::default();
+        let mut account_storage = alloy_primitives::map::AddressHashMap::default();
 
         for (addr, acc) in &self.cache.accounts {
-            account_storage.insert(*addr, acc.storage.clone());
+            let storage: alloy_primitives::map::HashMap<U256, U256> =
+                acc.storage.iter().map(|(k, v)| (*k, *v)).collect();
+            account_storage.insert(*addr, storage);
             let mut info = acc.info.clone();
             info.code = self.cache.contracts.get(&info.code_hash).cloned();
             accounts.insert(*addr, info);
         }
 
-        let block_hashes = self.cache.block_hashes.clone();
+        let block_hashes: alloy_primitives::map::HashMap<U256, B256> =
+            self.cache.block_hashes.iter().map(|(k, v)| (*k, *v)).collect();
         StateSnapshot { accounts, storage: account_storage, block_hashes }
     }
 
@@ -378,16 +371,13 @@ impl<T: DatabaseRef<Error = DatabaseError> + Debug> MaybeFullDatabase for CacheD
             if let Some(code) = acc.code.take() {
                 self.cache.contracts.insert(acc.code_hash, code);
             }
-            self.cache.accounts.insert(
-                addr,
-                DbAccount {
-                    info: acc,
-                    storage: storage.remove(&addr).unwrap_or_default(),
-                    ..Default::default()
-                },
-            );
+            let acc_storage =
+                storage.remove(&addr).map(|s| s.into_iter().collect()).unwrap_or_default();
+            self.cache
+                .accounts
+                .insert(addr, DbAccount { info: acc, storage: acc_storage, ..Default::default() });
         }
-        self.cache.block_hashes = block_hashes;
+        self.cache.block_hashes = block_hashes.into_iter().collect();
     }
 }
 
@@ -527,6 +517,7 @@ impl TryFrom<LegacyBlockEnv> for BlockEnv {
                 .or_else(|| {
                     Some(BlobExcessGasAndPrice::new(0, BLOB_BASE_FEE_UPDATE_FRACTION_PRAGUE))
                 }),
+            slot_num: 0,
         })
     }
 }
