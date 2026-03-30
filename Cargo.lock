@@ -5230,6 +5230,7 @@ dependencies = [
  "tempo-contracts",
  "tempo-evm",
  "tempo-precompiles",
+ "tempo-primitives",
  "tempo-revm",
  "thiserror 2.0.18",
  "tokio",
