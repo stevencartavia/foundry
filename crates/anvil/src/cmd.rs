@@ -4,6 +4,7 @@ use crate::{
     eth::{EthApi, backend::db::SerializableState, pool::transactions::TransactionOrder},
 };
 use alloy_genesis::Genesis;
+use alloy_network::Network;
 use alloy_primitives::{B256, U256, utils::Unit};
 use alloy_signer_local::coins_bip39::{English, Mnemonic};
 use anvil_server::ServerConfig;
@@ -13,7 +14,6 @@ use foundry_common::shell;
 use foundry_config::{Chain, Config, FigmentProviders};
 use foundry_evm::hardfork::{EthereumHardfork, OpHardfork};
 use foundry_evm_networks::NetworkConfigs;
-use alloy_network::Network;
 use foundry_primitives::FoundryReceiptEnvelope;
 use futures::FutureExt;
 use rand_08::{SeedableRng, rngs::StdRng};
@@ -673,11 +673,7 @@ impl<N: Network<ReceiptEnvelope = FoundryReceiptEnvelope>> PeriodicStateDumper<N
     }
 
     /// Infallible state dump
-    async fn dump_state(
-        api: EthApi<N>,
-        dump_state: PathBuf,
-        preserve_historical_states: bool,
-    ) {
+    async fn dump_state(api: EthApi<N>, dump_state: PathBuf, preserve_historical_states: bool) {
         trace!(path=?dump_state, "Dumping state on shutdown");
         match api.serialized_state(preserve_historical_states).await {
             Ok(state) => {
