@@ -58,7 +58,7 @@ use alloy_network::{
 };
 use alloy_op_evm::OpEvmFactory;
 use alloy_primitives::{
-    Address, B256, Bloom, Bytes, TxHash, TxKind, U64, U256, address, hex, keccak256, logs_bloom,
+    Address, B256, Bloom, Bytes, TxHash, TxKind, U64, U256, hex, keccak256, logs_bloom,
     map::{AddressMap, HashMap, HashSet},
 };
 use alloy_rpc_types::{
@@ -4123,7 +4123,7 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
             // Fee token balance check
             let fee_payer = tempo_tx.recover_fee_payer(address).unwrap_or(address);
             let fee_token =
-                tempo_tx.fee_token.unwrap_or(address!("20C0000000000000000000000000000000000000"));
+                tempo_tx.fee_token.unwrap_or(foundry_evm::core::tempo::PATH_USD_ADDRESS);
 
             // gas_limit * max_fee_per_gas in wei, scaled to 6-decimal token units
             let required_wei =
