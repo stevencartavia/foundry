@@ -1947,14 +1947,16 @@ impl EthApi<FoundryNetwork> {
         let priority = self.transaction_priority(&pending_transaction.transaction);
 
         // Tempo txs use a 2D nonce system — no sequential ordering by account nonce.
-        let (requires, provides) =
-            if matches!(pending_transaction.transaction.as_ref(), FoundryTxEnvelope::Tempo(_)) {
-                (vec![], vec![pending_transaction.hash().to_vec()])
-            } else {
-                let on_chain_nonce = self.backend.current_nonce(from).await?;
-                let nonce = pending_transaction.transaction.nonce();
-                (required_marker(nonce, on_chain_nonce, from), vec![to_marker(nonce, from)])
-            };
+        let (requires, provides) = if let FoundryTxEnvelope::Tempo(aa_tx) =
+            pending_transaction.transaction.as_ref()
+            && !aa_tx.tx().nonce_key.is_zero()
+        {
+            (vec![], vec![pending_transaction.hash().to_vec()])
+        } else {
+            let on_chain_nonce = self.backend.current_nonce(from).await?;
+            let nonce = pending_transaction.transaction.nonce();
+            (required_marker(nonce, on_chain_nonce, from), vec![to_marker(nonce, from)])
+        };
 
         let pool_transaction =
             PoolTransaction { requires, provides, pending_transaction, priority };
