@@ -28,7 +28,7 @@ impl From<FoundryHardfork> for String {
         match fork {
             FoundryHardfork::Ethereum(h) => format!("{h}"),
             FoundryHardfork::Optimism(h) => format!("optimism:{h}"),
-            FoundryHardfork::Tempo(h) => format!("tempo:{h:?}"),
+            FoundryHardfork::Tempo(h) => format!("tempo:{h}"),
         }
     }
 }
@@ -95,7 +95,7 @@ impl FoundryHardfork {
         match self {
             Self::Ethereum(h) => format!("{h}"),
             Self::Optimism(h) => format!("{h}"),
-            Self::Tempo(h) => format!("{h:?}"),
+            Self::Tempo(h) => format!("{h}"),
         }
     }
 }
