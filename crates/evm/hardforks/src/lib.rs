@@ -89,6 +89,15 @@ impl FoundryHardfork {
     pub fn tempo(h: TempoHardfork) -> Self {
         Self::Tempo(h)
     }
+
+    /// Returns the hardfork name without a network namespace prefix.
+    pub fn name(&self) -> String {
+        match self {
+            Self::Ethereum(h) => format!("{h}"),
+            Self::Optimism(h) => format!("{h}"),
+            Self::Tempo(h) => format!("{h:?}"),
+        }
+    }
 }
 
 impl From<EthereumHardfork> for FoundryHardfork {
