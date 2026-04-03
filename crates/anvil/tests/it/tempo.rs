@@ -14,12 +14,8 @@ use alloy_serde::WithOtherFields;
 use alloy_sol_types::sol;
 use anvil::{NodeConfig, spawn};
 use foundry_evm::core::tempo::{
-    ALPHA_USD_ADDRESS, BETA_USD_ADDRESS, PATH_USD_ADDRESS, THETA_USD_ADDRESS,
-};
-use tempo_precompiles::{
-    ACCOUNT_KEYCHAIN_ADDRESS, NONCE_PRECOMPILE_ADDRESS, STABLECOIN_DEX_ADDRESS,
-    TIP_FEE_MANAGER_ADDRESS, TIP20_FACTORY_ADDRESS, TIP403_REGISTRY_ADDRESS,
-    VALIDATOR_CONFIG_ADDRESS, VALIDATOR_CONFIG_V2_ADDRESS,
+    ALPHA_USD_ADDRESS, BETA_USD_ADDRESS, PATH_USD_ADDRESS, TEMPO_PRECOMPILE_ADDRESSES,
+    TEMPO_TIP20_TOKENS, THETA_USD_ADDRESS,
 };
 
 const PATH_USD: Address = PATH_USD_ADDRESS;
@@ -50,25 +46,14 @@ async fn test_tempo_precompiles_have_code() {
     let (api, _handle) = spawn(NodeConfig::test_tempo()).await;
 
     // Tempo precompiles should have sentinel bytecode (0xef)
-    let precompiles: &[Address] = &[
-        NONCE_PRECOMPILE_ADDRESS,
-        STABLECOIN_DEX_ADDRESS,
-        TIP20_FACTORY_ADDRESS,
-        TIP403_REGISTRY_ADDRESS,
-        TIP_FEE_MANAGER_ADDRESS,
-        VALIDATOR_CONFIG_ADDRESS,
-        VALIDATOR_CONFIG_V2_ADDRESS,
-        ACCOUNT_KEYCHAIN_ADDRESS,
-    ];
-
-    for addr in precompiles {
+    for addr in TEMPO_PRECOMPILE_ADDRESSES {
         let code = api.get_code(*addr, None).await.unwrap();
         assert!(!code.is_empty(), "Precompile {addr} should have code");
     }
 
     // All TIP20 token addresses should also have code
-    for addr in [PATH_USD, ALPHA_USD, BETA_USD, THETA_USD] {
-        let code = api.get_code(addr, None).await.unwrap();
+    for addr in TEMPO_TIP20_TOKENS {
+        let code = api.get_code(*addr, None).await.unwrap();
         assert!(!code.is_empty(), "Token {addr} should have code deployed");
     }
 }
