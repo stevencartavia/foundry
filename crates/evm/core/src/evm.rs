@@ -25,7 +25,6 @@ use alloy_rlp::Decodable;
 use foundry_common::{FoundryReceiptResponse, FoundryTransactionBuilder, fmt::UIfmt};
 use foundry_config::FromEvmVersion;
 use foundry_fork_db::{DatabaseError, ForkBlockEnv};
-use foundry_primitives::FoundryTxEnvelope;
 use op_alloy_network::Optimism;
 use op_revm::{
     DefaultOp, OpBuilder, OpContext, OpHaltReason, OpSpecId, OpTransaction, handler::OpHandler,
@@ -94,7 +93,6 @@ pub trait FoundryEvmNetwork: Copy + Debug + Default + 'static {
             TxEnvelope: Decodable
                             + SignerRecoverable
                             + From<Signed<<Self::Network as Network>::UnsignedTx>>
-                            + Into<FoundryTxEnvelope>
                             + for<'d> Deserialize<'d>
                             + Serialize
                             + UIfmt,
@@ -104,7 +102,7 @@ pub trait FoundryEvmNetwork: Copy + Debug + Default + 'static {
                                     + Serialize,
             ReceiptResponse: FoundryReceiptResponse,
         >;
-    type EvmFactory: FoundryEvmFactory<Tx: FromRecoveredTx<FoundryTxEnvelope>>;
+    type EvmFactory: FoundryEvmFactory<Tx: FromRecoveredTx<<Self::Network as Network>::TxEnvelope>>;
 }
 
 #[derive(Clone, Copy, Debug, Default)]
