@@ -749,6 +749,8 @@ impl FromAnyRpcTransaction for TempoTxEnv {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU64;
+
     use super::*;
     use alloy_consensus::{Sealed, Signed, TxEip1559, transaction::Recovered};
     use alloy_evm::{EthEvmFactory, EvmFactory};
@@ -974,7 +976,7 @@ mod tests {
             gas_limit: 424242,
             fee_token,
             nonce_key: U256::from(4242),
-            valid_after: Some(1800000000),
+            valid_after: NonZeroU64::new(1800000000),
             ..Default::default()
         };
         let aa_signed = AASigned::new_unhashed(

@@ -1156,7 +1156,7 @@ impl<N: Network> Backend<N> {
                 EVMError::Database(db) => EVMError::Database(db),
                 EVMError::Header(h) => EVMError::Header(h),
                 EVMError::Custom(s) => EVMError::Custom(s),
-                EVMError::Transaction(t) => EVMError::Transaction(t.0),
+                EVMError::Transaction(t) => EVMError::Transaction(t),
             })?;
             Ok(ResultAndState {
                 result: result.result.map_haltreason(|h| match h {
@@ -2503,6 +2503,8 @@ where
             excess_blob_gas: if is_cancun { evm_env.block_env.blob_excess_gas() } else { None },
             withdrawals_root: is_shanghai.then_some(EMPTY_WITHDRAWALS),
             requests_hash: is_prague.then_some(EMPTY_REQUESTS_HASH),
+            block_access_list_hash: None,
+            slot_number: None,
         };
 
         let block = create_block(header, transactions);
@@ -4092,7 +4094,7 @@ where
 
             // Reject if valid_before is expired or too close to current time (< 3 seconds)
             const AA_VALID_BEFORE_MIN_SECS: u64 = 3;
-            if let Some(valid_before) = tempo_tx.valid_before {
+            if let Some(valid_before) = tempo_tx.valid_before.map(|v| v.get()) {
                 let min_allowed = current_time.saturating_add(AA_VALID_BEFORE_MIN_SECS);
                 if valid_before <= min_allowed {
                     return Err(InvalidTransactionError::TempoValidBeforeExpired {
@@ -4105,7 +4107,7 @@ where
 
             // Reject if valid_after is too far in the future (> 1 hour)
             const AA_VALID_AFTER_MAX_SECS: u64 = 3600;
-            if let Some(valid_after) = tempo_tx.valid_after {
+            if let Some(valid_after) = tempo_tx.valid_after.map(|v| v.get()) {
                 let max_allowed = current_time.saturating_add(AA_VALID_AFTER_MAX_SECS);
                 if valid_after > max_allowed {
                     return Err(InvalidTransactionError::TempoValidAfterTooFar {

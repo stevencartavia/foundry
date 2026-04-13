@@ -3,7 +3,7 @@ use alloy_primitives::{Address, ruint::aliases::U256};
 use alloy_signer::Signature;
 use clap::Parser;
 use foundry_common::FoundryTransactionBuilder;
-use std::str::FromStr;
+use std::{num::NonZeroU64, str::FromStr};
 
 use crate::utils::parse_fee_token_address;
 
@@ -111,11 +111,15 @@ impl TempoOpts {
             tx.set_fee_token(fee_token);
         }
 
-        if let Some(valid_before) = self.valid_before {
-            tx.set_valid_before(valid_before);
+        if let Some(valid_before) = self.valid_before
+            && let Some(v) = NonZeroU64::new(valid_before)
+        {
+            tx.set_valid_before(v);
         }
-        if let Some(valid_after) = self.valid_after {
-            tx.set_valid_after(valid_after);
+        if let Some(valid_after) = self.valid_after
+            && let Some(v) = NonZeroU64::new(valid_after)
+        {
+            tx.set_valid_after(v);
         }
 
         if let Some(key_id) = self.key_id {
