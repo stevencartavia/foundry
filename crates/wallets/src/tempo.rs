@@ -158,4 +158,3 @@ pub fn lookup_signer(from: Address) -> Result<TempoLookup> {
 
     Ok(TempoLookup::NotFound)
 }
-

@@ -5519,7 +5519,6 @@ dependencies = [
  "alloy-dyn-abi",
  "alloy-network",
  "alloy-primitives",
- "alloy-provider",
  "alloy-rlp",
  "alloy-signer",
  "alloy-signer-aws",
