@@ -500,15 +500,15 @@ flate2 = "1.1"
 ethereum_ssz = "0.10"
 
 # Tempo
-tempo-chainspec = { git = "https://github.com/tempoxyz/tempo", rev = "f7e737acb7fc6ac0850c720aa484f75319f5a7c9", default-features = false }
-tempo-primitives = { git = "https://github.com/tempoxyz/tempo", rev = "f7e737acb7fc6ac0850c720aa484f75319f5a7c9", default-features = false, features = [
+tempo-chainspec = { git = "https://github.com/tempoxyz/tempo", rev = "e00f196ebb53812f4e5dca6e47a972d01c24f5ae", default-features = false }
+tempo-primitives = { git = "https://github.com/tempoxyz/tempo", rev = "e00f196ebb53812f4e5dca6e47a972d01c24f5ae", default-features = false, features = [
     "serde",
 ] }
-tempo-alloy = { git = "https://github.com/tempoxyz/tempo", rev = "f7e737acb7fc6ac0850c720aa484f75319f5a7c9", default-features = false }
-tempo-evm = { git = "https://github.com/tempoxyz/tempo", rev = "f7e737acb7fc6ac0850c720aa484f75319f5a7c9", default-features = false }
-tempo-revm = { git = "https://github.com/tempoxyz/tempo", rev = "f7e737acb7fc6ac0850c720aa484f75319f5a7c9", default-features = false }
-tempo-contracts = { git = "https://github.com/tempoxyz/tempo", rev = "f7e737acb7fc6ac0850c720aa484f75319f5a7c9" }
-tempo-precompiles = { git = "https://github.com/tempoxyz/tempo", rev = "f7e737acb7fc6ac0850c720aa484f75319f5a7c9" }
+tempo-alloy = { git = "https://github.com/tempoxyz/tempo", rev = "e00f196ebb53812f4e5dca6e47a972d01c24f5ae", default-features = false }
+tempo-evm = { git = "https://github.com/tempoxyz/tempo", rev = "e00f196ebb53812f4e5dca6e47a972d01c24f5ae", default-features = false }
+tempo-revm = { git = "https://github.com/tempoxyz/tempo", rev = "e00f196ebb53812f4e5dca6e47a972d01c24f5ae", default-features = false }
+tempo-contracts = { git = "https://github.com/tempoxyz/tempo", rev = "e00f196ebb53812f4e5dca6e47a972d01c24f5ae" }
+tempo-precompiles = { git = "https://github.com/tempoxyz/tempo", rev = "e00f196ebb53812f4e5dca6e47a972d01c24f5ae" }
 
 ## Pinned dependencies. Enabled for the workspace in crates/test-utils.
 
@@ -593,7 +593,7 @@ op-revm = { git = "https://github.com/foundry-rs/optimism", branch = "develop" }
 # revm-inspectors = { git = "https://github.com/paradigmxyz/revm-inspectors.git", rev = "22dcee2" }
 
 ## foundry-fork-db
-foundry-fork-db = { git = "https://github.com/foundry-rs/foundry-fork-db", rev = "c74d832605482854dd9da014fde1c58e8e7caa97" }
+foundry-fork-db = { git = "https://github.com/foundry-rs/foundry-fork-db", branch = "main" }
 
 # solar
 solar = { package = "solar-compiler", git = "https://github.com/paradigmxyz/solar", rev = "530f129" }
