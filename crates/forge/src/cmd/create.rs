@@ -3,8 +3,8 @@ use alloy_chains::Chain;
 use alloy_consensus::{SignableTransaction, Signed};
 use alloy_dyn_abi::{DynSolValue, JsonAbiExt, Specifier};
 use alloy_json_abi::{Constructor, JsonAbi};
-use alloy_network::{AnyNetwork, EthereumWallet, Network, ReceiptResponse, TransactionBuilder};
-use alloy_primitives::{Address, Bytes, hex};
+use alloy_network::{Ethereum, EthereumWallet, Network, ReceiptResponse, TransactionBuilder};
+use alloy_primitives::{Address, Bytes, U256, hex};
 use alloy_provider::{PendingTransactionError, Provider, ProviderBuilder as AlloyProviderBuilder};
 use alloy_signer::{Signature, Signer};
 use alloy_transport::TransportError;
@@ -16,6 +16,7 @@ use foundry_cli::{
     utils::{LoadConfig, find_contract_artifacts, read_constructor_args_file},
 };
 use foundry_common::{
+    FoundryTransactionBuilder,
     compile::{self},
     fmt::parse_tokens,
     provider::ProviderBuilder,
@@ -32,7 +33,6 @@ use foundry_config::{
     },
     merge_impl_figment_convert,
 };
-use foundry_primitives::FoundryTransactionBuilder;
 use foundry_wallets::{TempoAccessKeyConfig, WalletSigner};
 use serde_json::json;
 use std::{borrow::Borrow, marker::PhantomData, path::PathBuf, sync::Arc, time::Duration};
@@ -115,20 +115,20 @@ impl CreateArgs {
             )
             .await
         } else if self.tx.tempo.is_tempo() {
-            self.run_generic::<TempoNetwork>(signer).await
+            self.run_generic::<TempoNetwork>(signer, None).await
         } else {
-            self.run_generic::<AnyNetwork>(signer).await
+            self.run_generic::<Ethereum>(signer, None).await
         }
     }
 
     /// Handles Tempo access key (keychain mode) deployments.
     ///
-    /// Performs the `is_key_provisioned` check (which requires a `TempoNetwork` provider)
-    /// up front, then delegates to `deploy` for all shared logic.
+    /// Delegates to `deploy` which uses `sign_with_access_key` on `FoundryTransactionBuilder`
+    /// to handle provisioning checks and signing.
     async fn run_tempo_keychain(
         mut self,
         signer: WalletSigner,
-        mut access_key: TempoAccessKeyConfig,
+        access_key: TempoAccessKeyConfig,
     ) -> Result<()> {
         // Inject access key ID into TempoOpts so it's set before gas estimation.
         self.tx.tempo.key_id = Some(access_key.key_address);
@@ -142,20 +142,6 @@ impl CreateArgs {
         } else {
             provider.get_chain_id().await?
         };
-
-        // Check provisioning while we have a concrete TempoNetwork provider.
-        // Strip the authorization if the key is already on-chain so deploy()
-        // won't include it in the transaction.
-        if access_key.key_authorization.is_some()
-            && foundry_wallets::tempo::is_key_provisioned(
-                &provider,
-                access_key.wallet_address,
-                access_key.key_address,
-            )
-            .await
-        {
-            access_key.key_authorization = None;
-        }
 
         let dry_run = !self.broadcast;
         let deployer_address = access_key.wallet_address;
@@ -236,6 +222,7 @@ impl CreateArgs {
     async fn run_generic<N: Network>(
         mut self,
         pre_resolved_signer: Option<WalletSigner>,
+        access_key: Option<TempoAccessKeyConfig>,
     ) -> Result<()>
     where
         N::TxEnvelope: From<Signed<N::UnsignedTx>>,
@@ -246,6 +233,11 @@ impl CreateArgs {
         let (abi, bin, params, id, config) = self.compile_contract().await?;
 
         let provider = ProviderBuilder::<N>::from_config(&config)?.build()?;
+
+        // Inject access key ID into TempoOpts so it's set before gas estimation.
+        if let Some(ref ak) = access_key {
+            self.tx.tempo.key_id = Some(ak.key_address);
+        }
 
         // respect chain, if set explicitly via cmd args
         let chain_id = if let Some(chain_id) = self.chain_id() {
@@ -344,7 +336,7 @@ impl CreateArgs {
             evm_version: self.build.compiler.evm_version,
             show_standard_json_input: self.show_standard_json_input,
             guess_constructor_args: false,
-            compilation_profile: Some(id.profile.to_string()),
+            compilation_profile: Some(id.profile.clone()),
             language: None,
             creation_transaction_hash: None,
         };
@@ -374,11 +366,10 @@ impl CreateArgs {
         timeout: u64,
         id: ArtifactId,
         dry_run: bool,
-        access_key: Option<(WalletSigner, TempoAccessKeyConfig)>,
+        tempo_keychain: Option<(WalletSigner, TempoAccessKeyConfig)>,
     ) -> Result<()>
     where
-        N::TransactionRequest:
-            FoundryTransactionBuilder<N> + serde::Serialize + serde::de::DeserializeOwned,
+        N::TransactionRequest: FoundryTransactionBuilder<N> + serde::Serialize,
         N::ReceiptResponse: serde::Serialize,
     {
         let bin = bin.into_bytes().unwrap_or_default();
@@ -392,7 +383,7 @@ impl CreateArgs {
 
         let is_args_empty = args.is_empty();
         let mut deployer =
-            factory.deploy_tokens(args.clone()).context("failed to deploy contract").map_err(|e| {
+            factory.deploy_tokens(args.clone(), self.tx.tempo.fee_token).context("failed to deploy contract").map_err(|e| {
                 if is_args_empty {
                     e.wrap_err("no arguments provided for contract constructor; consider --constructor-args or --constructor-args-path")
                 } else {
@@ -410,6 +401,17 @@ impl CreateArgs {
 
         // Apply user-provided gas, fee, nonce, and Tempo options.
         self.tx.apply::<N>(&mut deployer.tx, is_legacy);
+
+        // For keychain mode, set key_id and nonce_key before gas estimation.
+        // Convert the CREATE into an AA-compatible call entry since Tempo AA
+        // transactions use a `calls` list instead of `to`+`input`.
+        if let Some((_, ref ak)) = tempo_keychain {
+            deployer.tx.set_key_id(ak.key_address);
+            if deployer.tx.nonce_key().is_none() {
+                deployer.tx.set_nonce_key(U256::ZERO);
+            }
+            deployer.tx.convert_create_to_call();
+        }
 
         // Fetch defaults from provider for values not specified by user.
         if self.tx.nonce.is_none() && !self.tx.tempo.expiring_nonce {
@@ -458,7 +460,14 @@ impl CreateArgs {
         }
 
         if dry_run {
-            if !shell::is_json() {
+            if shell::is_json() {
+                let output = json!({
+                    "contract": self.contract.name,
+                    "transaction": &deployer.tx,
+                    "abi":&abi
+                });
+                sh_println!("{}", serde_json::to_string_pretty(&output)?)?;
+            } else {
                 sh_warn!("Dry run enabled, not broadcasting transaction\n")?;
 
                 sh_println!("Contract: {}", self.contract.name)?;
@@ -471,50 +480,44 @@ impl CreateArgs {
                 sh_warn!(
                     "To broadcast this transaction, add --broadcast to the previous command. See forge create --help for more."
                 )?;
-            } else {
-                let output = json!({
-                    "contract": self.contract.name,
-                    "transaction": &deployer.tx,
-                    "abi":&abi
-                });
-                sh_println!("{}", serde_json::to_string_pretty(&output)?)?;
             }
 
             return Ok(());
         }
 
         // Deploy the actual contract
-        let (address, tx_hash) = if let Some((signer, access_key)) = access_key {
-            // Tempo access key (keychain) mode: bypass EthereumWallet, sign manually.
-            if let Some(auth) = access_key.key_authorization {
-                deployer.tx.set_key_authorization(auth);
-            }
+        let (deployed_contract, receipt) = if let Some((signer, ak)) = tempo_keychain {
+            // Tempo keychain mode: sign with access key provisioning and send raw
+            let raw_tx = deployer
+                .tx
+                .sign_with_access_key(
+                    &provider,
+                    &signer,
+                    ak.wallet_address,
+                    ak.key_address,
+                    ak.key_authorization.as_ref(),
+                )
+                .await?;
 
-            // Convert the generic tx to TempoTransactionRequest via serde. This is
-            // safe because this path is only reached when N = TempoNetwork.
-            let tempo_tx: tempo_alloy::rpc::TempoTransactionRequest =
-                serde_json::from_value(serde_json::to_value(&deployer.tx)?)?;
-            let raw_tx = foundry_wallets::tempo::sign_with_access_key(
-                tempo_tx,
-                &signer,
-                access_key.wallet_address,
-            )
-            .await?;
-            let pending = provider.send_raw_transaction(&raw_tx).await?;
-            let tx_hash = *pending.tx_hash();
-            let receipt = pending
+            let receipt = provider
+                .send_raw_transaction(&raw_tx)
+                .await?
                 .with_required_confirmations(1)
                 .with_timeout(Some(Duration::from_secs(timeout)))
                 .get_receipt()
                 .await?;
+
             let address = receipt
                 .contract_address()
                 .ok_or_else(|| eyre::eyre!("contract was not deployed"))?;
-            (address, tx_hash)
+
+            (address, receipt)
         } else {
-            let (address, receipt) = deployer.send_with_receipt().await?;
-            (address, receipt.transaction_hash())
+            deployer.send_with_receipt().await?
         };
+
+        let address = deployed_contract;
+        let tx_hash = receipt.transaction_hash();
         if shell::is_json() {
             let output = json!({
                 "deployer": deployer_address.to_string(),
@@ -535,7 +538,7 @@ impl CreateArgs {
         sh_println!("Starting contract verification...")?;
 
         let num_of_optimizations = if let Some(optimizer) = self.build.compiler.optimize {
-            if optimizer { Some(self.build.compiler.optimizer_runs.unwrap_or(200)) } else { None }
+            optimizer.then(|| self.build.compiler.optimizer_runs.unwrap_or(200))
         } else {
             self.build.compiler.optimizer_runs
         };
@@ -563,7 +566,7 @@ impl CreateArgs {
             evm_version: self.build.compiler.evm_version,
             show_standard_json_input: self.show_standard_json_input,
             guess_constructor_args: false,
-            compilation_profile: Some(id.profile.to_string()),
+            compilation_profile: Some(id.profile.clone()),
             language: None,
             creation_transaction_hash: Some(tx_hash),
         };
@@ -676,6 +679,10 @@ impl<N: Network, P: Provider<N>> Deployer<N, P> {
             .get_receipt()
             .await?;
 
+        if !receipt.status() {
+            return Err(ContractDeploymentError::DeploymentFailed(receipt.transaction_hash()));
+        }
+
         let address =
             receipt.contract_address().ok_or(ContractDeploymentError::ContractNotDeployed)?;
 
@@ -699,7 +706,7 @@ impl<N: Network, P: Provider<N> + Clone> DeploymentTxFactory<N, P> {
     /// Creates a factory for deployment of the Contract with bytecode, and the
     /// constructor defined in the abi. The client will be used to send any deployment
     /// transaction.
-    pub fn new(abi: JsonAbi, bytecode: Bytes, client: P, timeout: u64) -> Self {
+    pub const fn new(abi: JsonAbi, bytecode: Bytes, client: P, timeout: u64) -> Self {
         Self { client, abi, bytecode, timeout, _network: PhantomData }
     }
 
@@ -708,7 +715,11 @@ impl<N: Network, P: Provider<N> + Clone> DeploymentTxFactory<N, P> {
     pub fn deploy_tokens(
         self,
         params: Vec<DynSolValue>,
-    ) -> Result<Deployer<N, P>, ContractDeploymentError> {
+        fee_token: Option<Address>,
+    ) -> Result<Deployer<N, P>, ContractDeploymentError>
+    where
+        N::TransactionRequest: FoundryTransactionBuilder<N>,
+    {
         // Encode the constructor args & concatenate with the bytecode if necessary
         let data: Bytes = match (self.abi.constructor(), params.is_empty()) {
             (None, false) => return Err(ContractDeploymentError::ConstructorError),
@@ -726,7 +737,9 @@ impl<N: Network, P: Provider<N> + Clone> DeploymentTxFactory<N, P> {
         // create the tx object. Since we're deploying a contract, `to` is `None`
         let mut tx = N::TransactionRequest::default();
         tx.set_input(data);
-
+        if let Some(fee_token) = fee_token {
+            tx.set_fee_token(fee_token);
+        }
         Ok(Deployer { client: self.client.clone(), tx, confs: 1, timeout: self.timeout })
     }
 }
@@ -740,6 +753,8 @@ pub enum ContractDeploymentError {
     DetokenizationError(#[from] alloy_dyn_abi::Error),
     #[error("contract was not deployed")]
     ContractNotDeployed,
+    #[error("deployment transaction failed (receipt status 0): {0}")]
+    DeploymentFailed(alloy_primitives::TxHash),
     #[error(transparent)]
     RpcError(#[from] TransportError),
 }

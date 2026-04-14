@@ -1,101 +1,26 @@
-use std::{
-    marker::PhantomData,
-    ops::{Deref, DerefMut},
-};
+use super::*;
 
-use crate::{
-    EthCheatCtx, EthInspectorExt,
-    backend::{DatabaseExt, JournaledState},
-    constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH,
-};
-use alloy_consensus::constants::KECCAK_EMPTY;
-use alloy_evm::{Evm, EvmEnv, EvmFactory, eth::EthEvmContext, precompiles::PrecompilesMap};
-use alloy_primitives::{Address, Bytes, U256};
-use foundry_fork_db::DatabaseError;
-use revm::{
-    Context,
-    context::{
-        BlockEnv, Cfg, CfgEnv, ContextSetters, ContextTr, CreateScheme, Evm as RevmEvm, JournalTr,
-        LocalContextTr, TxEnv,
-        result::{EVMError, ExecResultAndState, ExecutionResult, HaltReason, ResultAndState},
-    },
-    handler::{
-        EthFrame, EvmTr, FrameResult, FrameTr, Handler, ItemOrResult, instructions::EthInstructions,
-    },
-    inspector::{InspectorEvmTr, InspectorHandler},
-    interpreter::{
-        CallInput, CallInputs, CallOutcome, CallScheme, CallValue, CreateInputs, CreateOutcome,
-        FrameInput, Gas, InstructionResult, InterpreterResult, SharedMemory,
-        interpreter::EthInterpreter, interpreter_action::FrameInit, return_ok,
-    },
-    primitives::hardfork::SpecId,
-};
-
-pub fn new_revm_with_inspector<'db, I: EthInspectorExt>(
-    db: &'db mut dyn DatabaseExt,
-    evm_env: EvmEnv,
-    inspector: I,
-) -> EthRevmEvm<'db, I> {
-    let mut revm = alloy_evm::EthEvmFactory::default()
-        .create_evm_with_inspector(db, evm_env, inspector)
-        .into_inner();
-    revm.ctx.cfg.tx_chain_id_check = true;
-    revm.inspector.get_networks().inject_precompiles(&mut revm.precompiles);
-    revm
-}
-
-pub fn new_eth_evm_with_inspector<'db, I: EthInspectorExt>(
-    db: &'db mut dyn DatabaseExt,
-    evm_env: EvmEnv,
-    inspector: I,
-) -> FoundryEvm<'db, I> {
-    let eth_evm =
-        alloy_evm::EthEvmFactory::default().create_evm_with_inspector(db, evm_env, inspector);
-    let mut inner = eth_evm.into_inner();
-    inner.ctx.cfg.tx_chain_id_check = true;
-
-    let mut evm = FoundryEvm { inner };
-    evm.inspector().get_networks().inject_precompiles(evm.precompiles_mut());
-    evm
-}
-
-/// Get the call inputs for the CREATE2 factory.
-fn get_create2_factory_call_inputs(
-    salt: U256,
-    inputs: &CreateInputs,
-    deployer: Address,
-) -> CallInputs {
-    let calldata = [&salt.to_be_bytes::<32>()[..], &inputs.init_code()[..]].concat();
-    CallInputs {
-        caller: inputs.caller(),
-        bytecode_address: deployer,
-        known_bytecode: None,
-        target_address: deployer,
-        scheme: CallScheme::Call,
-        value: CallValue::Transfer(inputs.value()),
-        input: CallInput::Bytes(calldata.into()),
-        gas_limit: inputs.gas_limit(),
-        is_static: false,
-        return_memory_offset: 0..0,
-    }
-}
-
-type EthRevmEvm<'db, I> = RevmEvm<
-    EthEvmContext<&'db mut dyn DatabaseExt>,
+pub type EthRevmEvm<'db, I> = RevmEvm<
+    EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFactory>>,
     I,
-    EthInstructions<EthInterpreter, EthEvmContext<&'db mut dyn DatabaseExt>>,
+    EthInstructions<EthInterpreter, EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFactory>>>,
     PrecompilesMap,
     EthFrame<EthInterpreter>,
 >;
 
-pub struct FoundryEvm<'db, I: EthInspectorExt> {
-    inner: EthRevmEvm<'db, I>,
+pub struct EthFoundryEvm<
+    'db,
+    I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFactory>>>,
+> {
+    pub inner: EthRevmEvm<'db, I>,
 }
 
-impl<'db, I: EthInspectorExt> Evm for FoundryEvm<'db, I> {
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFactory>>>> Evm
+    for EthFoundryEvm<'db, I>
+{
     type Precompiles = PrecompilesMap;
     type Inspector = I;
-    type DB = &'db mut dyn DatabaseExt;
+    type DB = &'db mut dyn DatabaseExt<EthEvmFactory>;
     type Error = EVMError<DatabaseError>;
     type HaltReason = HaltReason;
     type Spec = SpecId;
@@ -132,7 +57,7 @@ impl<'db, I: EthInspectorExt> Evm for FoundryEvm<'db, I> {
     ) -> Result<ResultAndState<Self::HaltReason>, Self::Error> {
         self.inner.set_tx(tx);
 
-        let mut handler = FoundryHandler::<I>::default();
+        let mut handler = EthFoundryHandler::<I>::default();
         let result = handler.inspect_run(&mut self.inner)?;
 
         Ok(ResultAndState::new(result, self.inner.ctx.journaled_state.inner.state.clone()))
@@ -157,59 +82,77 @@ impl<'db, I: EthInspectorExt> Evm for FoundryEvm<'db, I> {
     }
 }
 
-impl<'db, I: EthInspectorExt> Deref for FoundryEvm<'db, I> {
-    type Target = Context<BlockEnv, TxEnv, CfgEnv, &'db mut dyn DatabaseExt>;
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFactory>>>> Deref
+    for EthFoundryEvm<'db, I>
+{
+    type Target = EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFactory>>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner.ctx
     }
 }
 
-impl<I: EthInspectorExt> DerefMut for FoundryEvm<'_, I> {
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFactory>>>> DerefMut
+    for EthFoundryEvm<'db, I>
+{
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner.ctx
     }
 }
 
-/// Object-safe trait exposing the operations that cheatcode nested EVM closures need.
-///
-/// This abstracts over the concrete EVM type (`FoundryEvm`, future `TempoEvm`, etc.)
-/// so that cheatcode impls can build and run nested EVMs without knowing the concrete type.
-pub trait NestedEvm {
-    /// The transaction environment type.
-    type Tx;
-    /// The block environment type.
-    type Block;
-    /// The EVM spec (hardfork) type.
-    type Spec;
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFactory>>>>
+    IntoNestedEvm<SpecId, BlockEnv, TxEnv> for EthFoundryEvm<'db, I>
+{
+    type Inner = EthRevmEvm<'db, I>;
 
-    /// Returns a mutable reference to the journal inner state (`JournaledState`).
-    fn journal_inner_mut(&mut self) -> &mut JournaledState;
-
-    /// Runs a single execution frame (create or call) through the EVM handler loop.
-    fn run_execution(&mut self, frame: FrameInput) -> Result<FrameResult, EVMError<DatabaseError>>;
-
-    /// Executes a full transaction with the given tx env.
-    fn transact_raw(
-        &mut self,
-        tx: Self::Tx,
-    ) -> Result<ResultAndState<HaltReason>, EVMError<DatabaseError>>;
-
-    /// Returns a snapshot of the current EVM environment (cfg + block).
-    fn to_evm_env(self) -> EvmEnv<Self::Spec, Self::Block>;
+    fn into_nested_evm(self) -> Self::Inner {
+        self.inner
+    }
 }
 
-impl<'db, I: EthInspectorExt> NestedEvm for EthRevmEvm<'db, I> {
-    type Tx = TxEnv;
-    type Block = BlockEnv;
+impl FoundryEvmFactory for EthEvmFactory {
+    type FoundryContext<'db> = EthEvmContext<&'db mut dyn DatabaseExt<Self>>;
+
+    type FoundryEvm<'db, I: FoundryInspectorExt<Self::FoundryContext<'db>>> = EthFoundryEvm<'db, I>;
+
+    fn create_foundry_evm_with_inspector<'db, I: FoundryInspectorExt<Self::FoundryContext<'db>>>(
+        &self,
+        db: &'db mut dyn DatabaseExt<Self>,
+        evm_env: EvmEnv,
+        inspector: I,
+    ) -> Self::FoundryEvm<'db, I> {
+        let eth_evm = Self::default().create_evm_with_inspector(db, evm_env, inspector);
+        let mut inner = eth_evm.into_inner();
+        inner.ctx.cfg.tx_chain_id_check = true;
+
+        let mut evm = EthFoundryEvm { inner };
+        evm.inspector().get_networks().inject_precompiles(evm.precompiles_mut());
+        evm
+    }
+
+    fn create_foundry_nested_evm<'db>(
+        &self,
+        db: &'db mut dyn DatabaseExt<Self>,
+        evm_env: EvmEnv,
+        inspector: &'db mut dyn FoundryInspectorExt<Self::FoundryContext<'db>>,
+    ) -> Box<dyn NestedEvm<Spec = SpecId, Block = BlockEnv, Tx = TxEnv> + 'db> {
+        Box::new(self.create_foundry_evm_with_inspector(db, evm_env, inspector).into_nested_evm())
+    }
+}
+
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFactory>>>> NestedEvm
+    for EthRevmEvm<'db, I>
+{
     type Spec = SpecId;
+    type Block = BlockEnv;
+    type Tx = TxEnv;
 
     fn journal_inner_mut(&mut self) -> &mut JournaledState {
         &mut self.ctx_mut().journaled_state.inner
     }
 
     fn run_execution(&mut self, frame: FrameInput) -> Result<FrameResult, EVMError<DatabaseError>> {
-        let mut handler = FoundryHandler::<I>::default();
+        let mut handler = EthFoundryHandler::<I>::default();
 
         // Create first frame
         let memory =
@@ -227,63 +170,32 @@ impl<'db, I: EthInspectorExt> NestedEvm for EthRevmEvm<'db, I> {
 
     fn transact_raw(
         &mut self,
-        tx: TxEnv,
+        tx: Self::Tx,
     ) -> Result<ResultAndState<HaltReason>, EVMError<DatabaseError>> {
         self.set_tx(tx);
 
-        let mut handler = FoundryHandler::<I>::default();
+        let mut handler = EthFoundryHandler::<I>::default();
         let result = handler.inspect_run(self)?;
 
         Ok(ResultAndState::new(result, self.ctx.journaled_state.inner.state.clone()))
     }
 
-    fn to_evm_env(self) -> EvmEnv {
-        let Context { block, cfg, .. } = self.ctx;
-        EvmEnv::new(cfg, block)
+    fn to_evm_env(&self) -> EvmEnv<Self::Spec, Self::Block> {
+        self.ctx_ref().evm_clone()
     }
 }
 
-/// Closure type used by `CheatcodesExecutor` methods that run nested EVM operations.
-pub type NestedEvmClosure<'a, Block, Tx, Spec> =
-    &'a mut dyn FnMut(
-        &mut dyn NestedEvm<Block = Block, Tx = Tx, Spec = Spec>,
-    ) -> Result<(), EVMError<DatabaseError>>;
-
-/// Clones the current context (env + journal), passes the database, cloned env,
-/// and cloned journal inner to the callback. The callback builds whatever EVM it
-/// needs, runs its operations, and returns `(result, modified_env, modified_journal)`.
-/// Modified state is written back after the callback returns.
-pub fn with_cloned_context<CTX: EthCheatCtx>(
-    ecx: &mut CTX,
-    f: impl FnOnce(
-        &mut dyn DatabaseExt<CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
-        EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
-        JournaledState,
-    ) -> Result<
-        (EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>, JournaledState),
-        EVMError<DatabaseError>,
-    >,
-) -> Result<(), EVMError<DatabaseError>> {
-    let evm_env = ecx.evm_clone();
-
-    let (db, journal_inner) = ecx.db_journal_inner_mut();
-    let journal_inner_clone = journal_inner.clone();
-
-    let (sub_evm_env, sub_inner) = f(db, evm_env, journal_inner_clone)?;
-
-    // Write back modified state. The db borrow was released when f returned.
-    ecx.set_journal_inner(sub_inner);
-    ecx.set_evm(sub_evm_env);
-
-    Ok(())
-}
-
-pub struct FoundryHandler<'db, I: EthInspectorExt> {
+pub struct EthFoundryHandler<
+    'db,
+    I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFactory>>>,
+> {
     create2_overrides: Vec<(usize, CallInputs)>,
-    _phantom: PhantomData<(&'db mut dyn DatabaseExt, I)>,
+    _phantom: PhantomData<(&'db mut dyn DatabaseExt<EthEvmFactory>, I)>,
 }
 
-impl<I: EthInspectorExt> Default for FoundryHandler<'_, I> {
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFactory>>>> Default
+    for EthFoundryHandler<'db, I>
+{
     fn default() -> Self {
         Self { create2_overrides: Vec::new(), _phantom: PhantomData }
     }
@@ -291,11 +203,13 @@ impl<I: EthInspectorExt> Default for FoundryHandler<'_, I> {
 
 // Blanket Handler implementation for FoundryHandler, needed for implementing the InspectorHandler
 // trait.
-impl<'db, I: EthInspectorExt> Handler for FoundryHandler<'db, I> {
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFactory>>>> Handler
+    for EthFoundryHandler<'db, I>
+{
     type Evm = RevmEvm<
-        EthEvmContext<&'db mut dyn DatabaseExt>,
+        EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFactory>>,
         I,
-        EthInstructions<EthInterpreter, EthEvmContext<&'db mut dyn DatabaseExt>>,
+        EthInstructions<EthInterpreter, EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFactory>>>,
         PrecompilesMap,
         EthFrame<EthInterpreter>,
     >;
@@ -303,7 +217,9 @@ impl<'db, I: EthInspectorExt> Handler for FoundryHandler<'db, I> {
     type HaltReason = HaltReason;
 }
 
-impl<'db, I: EthInspectorExt> FoundryHandler<'db, I> {
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFactory>>>>
+    EthFoundryHandler<'db, I>
+{
     /// Handles CREATE2 frame initialization, potentially transforming it to use the CREATE2
     /// factory.
     fn handle_create_frame(
@@ -397,7 +313,9 @@ impl<'db, I: EthInspectorExt> FoundryHandler<'db, I> {
     }
 }
 
-impl<I: EthInspectorExt> InspectorHandler for FoundryHandler<'_, I> {
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFactory>>>>
+    InspectorHandler for EthFoundryHandler<'db, I>
+{
     type IT = EthInterpreter;
 
     fn inspect_run_exec_loop(
