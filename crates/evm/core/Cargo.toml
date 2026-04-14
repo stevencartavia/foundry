@@ -37,7 +37,7 @@ alloy-provider.workspace = true
 alloy-network.workspace = true
 alloy-consensus.workspace = true
 alloy-op-evm.workspace = true
-alloy-rpc-types.workspace = true
+alloy-rpc-types = { workspace = true, features = ["anvil"] }
 alloy-sol-types.workspace = true
 alloy-rlp.workspace = true
 foundry-fork-db.workspace = true
