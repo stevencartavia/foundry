@@ -9,7 +9,7 @@ mod rtlo;
 mod unchecked_calls;
 mod unprotected_initializer;
 
-use arbitrary_send_erc20::ARBITRARY_SEND_ERC20;
+use arbitrary_send_erc20::{ARBITRARY_SEND_ERC20, ARBITRARY_SEND_ERC20_PERMIT};
 use arbitrary_send_eth::ARBITRARY_SEND_ETH;
 use encode_packed_collision::ENCODE_PACKED_COLLISION;
 use incorrect_shift::INCORRECT_SHIFT;
@@ -19,7 +19,7 @@ use unchecked_calls::{ERC20_UNCHECKED_TRANSFER, UNCHECKED_CALL};
 use unprotected_initializer::UNPROTECTED_INITIALIZER;
 
 register_lints!(
-    (ArbitrarySendErc20, late, (ARBITRARY_SEND_ERC20)),
+    (ArbitrarySendErc20, late, (ARBITRARY_SEND_ERC20, ARBITRARY_SEND_ERC20_PERMIT)),
     (ArbitrarySendEth, late, (ARBITRARY_SEND_ETH)),
     (EncodedPackedCollision, late, (ENCODE_PACKED_COLLISION)),
     (IncorrectShift, early, (INCORRECT_SHIFT)),
